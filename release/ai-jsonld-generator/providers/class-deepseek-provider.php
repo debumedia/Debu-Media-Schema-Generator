@@ -200,8 +200,9 @@ class AI_JSONLD_DeepSeek_Provider extends AI_JSONLD_Abstract_Provider {
      * @return array Messages array.
      */
     private function build_messages( array $payload ): array {
-        $system_prompt = $this->get_system_prompt();
-        $user_message  = $this->build_user_message( $payload );
+        $schema_reference = $payload['schemaReference'] ?? '';
+        $system_prompt    = $this->get_system_prompt( $schema_reference );
+        $user_message     = $this->build_user_message( $payload );
 
         return array(
             array(
@@ -218,35 +219,82 @@ class AI_JSONLD_DeepSeek_Provider extends AI_JSONLD_Abstract_Provider {
     /**
      * Get system prompt
      *
+     * @param string $schema_reference Optional schema reference documentation.
      * @return string
      */
-    private function get_system_prompt(): string {
-        return 'You are a schema.org JSON-LD generator for web pages.
+    private function get_system_prompt( string $schema_reference = '' ): string {
+        $base_prompt = 'You are a schema.org JSON-LD generator that creates COMPREHENSIVE, RICH structured data for web pages.
+
+YOUR GOAL: Generate detailed, complete schema markup that fully describes the page content. Include ALL information you can extract from the content.
 
 STRICT REQUIREMENTS:
 1. Output ONLY valid JSON. No markdown code fences, no explanations, no commentary.
-2. Every object must include "@context": "https://schema.org"
-3. Use appropriate schema.org types based on the content.
-4. NEVER invent or hallucinate information. If data is not provided, omit that field entirely.
-5. For URLs, only use URLs explicitly provided in the input.
-6. For dates, only use dates explicitly provided.
-7. For contact information, only include if explicitly provided.
+2. The output must be a single JSON object with "@context": "https://schema.org" at the root level.
+3. NEVER invent or hallucinate information not present in the content.
+4. For URLs, only use URLs explicitly provided in the input.
+5. For contact information (email, phone), only include if explicitly present in the content.
+
+CONTENT STRUCTURE MARKERS:
+The content includes special markers to help you understand the page structure:
+- ## [Heading] ## indicates a section heading
+- [LIST START] / [LIST END] indicates a list of items
+- [NUMBERED LIST START] / [NUMBERED LIST END] indicates ordered steps
+- [SECTION] / [/SECTION] indicates a content section
+- [ARTICLE] / [/ARTICLE] indicates article content
+- **text** indicates important/emphasized text
+- Links include their URLs in parentheses: text (https://...)
+
+Use these markers to identify:
+- Services being offered (often under headings like "Services", "What We Do")
+- Contact information (under "Contact", "Get in Touch")
+- Team members or founders (under "Team", "About Us")
+- Pricing or offers
+- FAQs (Question/Answer patterns)
 
 OUTPUT FORMAT:
-- Single schema object: {"@context": "https://schema.org", "@type": "...", ...}
-- Multiple schemas: Use @graph format: {"@context": "https://schema.org", "@graph": [...]}
+Use @graph format to include multiple related entities:
+{"@context": "https://schema.org", "@graph": [...]}
+
+The @graph should typically include:
+- A WebPage or Article as the main entity
+- Organization or LocalBusiness if business info is present
+- Service objects for each distinct service mentioned
+- Person objects for team members/founders mentioned
+- ContactPoint for contact information
+- PostalAddress if address is provided
+- FAQPage with Question/Answer if FAQ content exists
+
+Use @id references to link related entities:
+- "@id": "#organization" on the Organization
+- "provider": {"@id": "#organization"} on Services
+- "publisher": {"@id": "#organization"} on Articles
 
 SCHEMA TYPE SELECTION:
-- Article: Blog posts, news articles, editorial content
-- WebPage: Generic informational pages
-- Service: Pages describing services offered
-- LocalBusiness: Business location/contact pages
-- FAQPage: ONLY if content contains clear Question/Answer pairs
-- Product: Product description pages
-- HowTo: Step-by-step instruction content
-- Event: Event announcements with dates/locations
+- WebPage: Default for informational pages
+- Article: Blog posts, news, editorial content with clear authorship
+- Service/ProfessionalService: Pages describing services (use one Service per distinct service)
+- LocalBusiness: Business pages with physical location/contact
+- Organization: Company/organization information
+- FAQPage: Pages with clear Question/Answer pairs
+- Product: Product pages with pricing
+- HowTo: Step-by-step instructions
+- Event: Event announcements with dates
 
-Remember: Accuracy over completeness. Omit uncertain fields rather than guess.';
+COMPLETENESS PRINCIPLE:
+Extract and include ALL relevant information from the content:
+- Every service mentioned should become a Service object
+- Business name, description, and any contact info should be included
+- Team members or founders should become Person objects
+- Areas served or target audience should be included
+- Any pricing or offers should be captured
+
+Remember: Completeness with accuracy. Include all information that IS present in the content.';
+
+        if ( ! empty( $schema_reference ) ) {
+            $base_prompt .= "\n\nSCHEMA.ORG REFERENCE:\nUse the following schema types and properties:\n\n" . $schema_reference;
+        }
+
+        return $base_prompt;
     }
 
     /**

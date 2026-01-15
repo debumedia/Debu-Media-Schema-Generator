@@ -26,7 +26,7 @@ class AI_JSONLD_Content_Processor {
     const SENTENCE_BREAK_THRESHOLD = 0.7;
 
     /**
-     * Prepare content for LLM processing
+     * Prepare content for LLM processing (plain text)
      *
      * @param string $content Raw content (HTML).
      * @return string Cleaned content.
@@ -49,6 +49,130 @@ class AI_JSONLD_Content_Processor {
         $content = trim( $content );
 
         return $content;
+    }
+
+    /**
+     * Prepare content preserving semantic structure
+     *
+     * Converts HTML structure to readable markers that help the LLM
+     * understand page organization (headings, lists, sections).
+     *
+     * @param string $content Raw HTML content.
+     * @return string Content with semantic structure preserved.
+     */
+    public function prepare_with_structure( string $content ): string {
+        if ( empty( $content ) ) {
+            return '';
+        }
+
+        // Step 1: Remove scripts, styles, and comments
+        $content = preg_replace( '/<script[^>]*>.*?<\/script>/is', '', $content );
+        $content = preg_replace( '/<style[^>]*>.*?<\/style>/is', '', $content );
+        $content = preg_replace( '/<!--.*?-->/s', '', $content );
+
+        // Step 2: Remove potentially harmful/noisy tags
+        $content = preg_replace( '/<(iframe|object|embed|form|input|button|select|textarea)[^>]*>.*?<\/\1>/is', '', $content );
+        $content = preg_replace( '/<(iframe|object|embed|input|button|br|hr|img)[^>]*\/?>/is', '', $content );
+
+        // Step 3: Convert headings to readable markers
+        $content = preg_replace_callback(
+            '/<h([1-6])[^>]*>(.*?)<\/h\1>/is',
+            function ( $matches ) {
+                $text = wp_strip_all_tags( $matches[2] );
+                $text = trim( $text );
+                if ( empty( $text ) ) {
+                    return '';
+                }
+                return "\n\n## [" . $text . "] ##\n\n";
+            },
+            $content
+        );
+
+        // Step 4: Convert lists to readable format
+        $content = preg_replace( '/<ul[^>]*>/i', "\n[LIST START]\n", $content );
+        $content = preg_replace( '/<\/ul>/i', "[LIST END]\n", $content );
+        $content = preg_replace( '/<ol[^>]*>/i', "\n[NUMBERED LIST START]\n", $content );
+        $content = preg_replace( '/<\/ol>/i', "[NUMBERED LIST END]\n", $content );
+        $content = preg_replace_callback(
+            '/<li[^>]*>(.*?)<\/li>/is',
+            function ( $matches ) {
+                $text = wp_strip_all_tags( $matches[1] );
+                $text = trim( $text );
+                return "- " . $text . "\n";
+            },
+            $content
+        );
+
+        // Step 5: Convert semantic sections
+        $content = preg_replace( '/<section[^>]*>/i', "\n[SECTION]\n", $content );
+        $content = preg_replace( '/<\/section>/i', "\n[/SECTION]\n", $content );
+        $content = preg_replace( '/<article[^>]*>/i', "\n[ARTICLE]\n", $content );
+        $content = preg_replace( '/<\/article>/i', "\n[/ARTICLE]\n", $content );
+        $content = preg_replace( '/<aside[^>]*>/i', "\n[ASIDE]\n", $content );
+        $content = preg_replace( '/<\/aside>/i', "\n[/ASIDE]\n", $content );
+        $content = preg_replace( '/<nav[^>]*>/i', "\n[NAV]\n", $content );
+        $content = preg_replace( '/<\/nav>/i', "\n[/NAV]\n", $content );
+        $content = preg_replace( '/<footer[^>]*>/i', "\n[FOOTER]\n", $content );
+        $content = preg_replace( '/<\/footer>/i', "\n[/FOOTER]\n", $content );
+        $content = preg_replace( '/<header[^>]*>/i', "\n[HEADER]\n", $content );
+        $content = preg_replace( '/<\/header>/i', "\n[/HEADER]\n", $content );
+
+        // Step 6: Preserve emphasis
+        $content = preg_replace( '/<(strong|b)[^>]*>(.*?)<\/\1>/is', '**$2**', $content );
+        $content = preg_replace( '/<(em|i)[^>]*>(.*?)<\/\1>/is', '*$2*', $content );
+
+        // Step 7: Convert paragraphs and line breaks
+        $content = preg_replace( '/<p[^>]*>/i', "\n", $content );
+        $content = preg_replace( '/<\/p>/i', "\n", $content );
+        $content = preg_replace( '/<div[^>]*>/i', "\n", $content );
+        $content = preg_replace( '/<\/div>/i', "\n", $content );
+
+        // Step 8: Extract links with their URLs for context
+        $content = preg_replace_callback(
+            '/<a[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)<\/a>/is',
+            function ( $matches ) {
+                $url  = $matches[1];
+                $text = wp_strip_all_tags( $matches[2] );
+                $text = trim( $text );
+                if ( empty( $text ) ) {
+                    return '';
+                }
+                // Only include URL if it looks useful (email, tel, or external)
+                if ( preg_match( '/^(mailto:|tel:|https?:\/\/)/i', $url ) ) {
+                    return $text . ' (' . $url . ')';
+                }
+                return $text;
+            },
+            $content
+        );
+
+        // Step 9: Strip remaining HTML tags
+        $content = wp_strip_all_tags( $content );
+
+        // Step 10: Decode HTML entities
+        $content = html_entity_decode( $content, ENT_QUOTES, 'UTF-8' );
+
+        // Step 11: Normalize whitespace (but preserve structure markers)
+        $content = preg_replace( '/[ \t]+/', ' ', $content );
+        $content = preg_replace( '/\n{3,}/', "\n\n", $content );
+
+        // Step 12: Clean up marker formatting
+        $content = preg_replace( '/\n +/', "\n", $content );
+        $content = preg_replace( '/ +\n/', "\n", $content );
+
+        return trim( $content );
+    }
+
+    /**
+     * Process content with structure preservation
+     *
+     * @param string $content   Raw content.
+     * @param int    $max_chars Maximum characters.
+     * @return array Result array with structured and truncated content.
+     */
+    public function process_with_structure( string $content, int $max_chars = self::DEFAULT_MAX_CHARS ): array {
+        $structured = $this->prepare_with_structure( $content );
+        return $this->truncate( $structured, $max_chars );
     }
 
     /**

@@ -45,11 +45,31 @@ class AI_JSONLD_Prompt_Builder {
             return array();
         }
 
+        $type_hint = $this->get_type_hint( $post_id );
+
         return array(
-            'page'     => $this->build_page_data( $post, $settings ),
-            'site'     => $this->build_site_data(),
-            'typeHint' => $this->get_type_hint( $post_id ),
+            'page'            => $this->build_page_data( $post, $settings ),
+            'site'            => $this->build_site_data(),
+            'typeHint'        => $type_hint,
+            'schemaReference' => $this->build_schema_reference( $type_hint ),
         );
+    }
+
+    /**
+     * Build schema reference for the prompt
+     *
+     * @param string $type_hint Type hint from user.
+     * @return string Formatted schema reference.
+     */
+    private function build_schema_reference( string $type_hint ): string {
+        if ( ! class_exists( 'AI_JSONLD_Schema_Reference' ) ) {
+            return '';
+        }
+
+        $relevant_types = AI_JSONLD_Schema_Reference::get_relevant_types( $type_hint );
+        $definitions    = AI_JSONLD_Schema_Reference::get_definitions_for_types( $relevant_types );
+
+        return AI_JSONLD_Schema_Reference::format_for_prompt( $definitions );
     }
 
     /**
@@ -62,8 +82,8 @@ class AI_JSONLD_Prompt_Builder {
     private function build_page_data( WP_Post $post, array $settings ): array {
         $max_chars = intval( $settings['max_content_chars'] ?? 8000 );
 
-        // Process content
-        $content_result = $this->content_processor->process( $post->post_content, $max_chars );
+        // Process content with structure preservation for better schema generation
+        $content_result = $this->content_processor->process_with_structure( $post->post_content, $max_chars );
 
         // Get featured image data
         $featured_image = $this->get_featured_image_data( $post->ID );
