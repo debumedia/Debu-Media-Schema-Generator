@@ -8,7 +8,7 @@ This is a WordPress plugin called "AI JSON-LD Generator" that automatically gene
 - **Name:** AI JSON-LD Generator
 - **Slug:** `ai-jsonld-generator`
 - **Text Domain:** `ai-jsonld-generator`
-- **Version:** 1.0 (initial)
+- **Version:** 1.1.1
 
 ## Core Functionality
 
@@ -32,15 +32,16 @@ ai-jsonld-generator/
 │   ├── class-ajax.php               # AJAX handlers
 │   ├── class-schema-output.php      # Frontend injection
 │   ├── class-schema-validator.php   # JSON validation
+│   ├── class-schema-reference.php   # Schema.org type definitions (14 types)
 │   ├── class-prompt-builder.php     # Prompt construction
-│   ├── class-content-processor.php  # Content prep/truncation
+│   ├── class-content-processor.php  # Content prep/truncation with structure preservation
 │   ├── class-encryption.php         # API key security
 │   └── class-conflict-detector.php  # SEO plugin detection
 ├── providers/
 │   ├── interface-provider.php       # Provider contract
 │   ├── class-provider-registry.php  # Provider management
-│   ├── class-deepseek-provider.php  # DeepSeek implementation
-│   └── class-abstract-provider.php  # Shared functionality
+│   ├── class-deepseek-provider.php  # DeepSeek implementation with dynamic token management
+│   └── class-abstract-provider.php  # Shared functionality (HTTP, retry logic)
 └── assets/
     ├── js/
     │   ├── admin.js
@@ -76,8 +77,8 @@ Key settings include:
 - `deepseek_api_key`: encrypted string
 - `deepseek_model`: 'deepseek-chat'
 - `temperature`: 0.2
-- `max_tokens`: 1200
-- `max_content_chars`: 8000
+- `max_tokens`: 8000 (maximum output tokens for schema)
+- `max_content_chars`: 50000 (maximum page content to process)
 - `output_location`: 'head' | 'after_content'
 - `enabled_post_types`: ['page']
 - `auto_regenerate_on_update`: false
@@ -97,17 +98,94 @@ Key settings include:
 
 ## Content Processing
 
-**Preparation Steps:**
-1. Strip HTML tags: `wp_strip_all_tags($content)`
-2. Decode entities: `html_entity_decode($content, ENT_QUOTES, 'UTF-8')`
-3. Normalize whitespace: `preg_replace('/\s+/', ' ', $content)`
-4. Trim: `trim($content)`
+The plugin uses structure-preserving content processing to help the LLM understand page organization.
 
-**Truncation Logic:**
-- Default max: 8000 characters
+### Structure Preservation (v1.1.0+)
+
+HTML semantic structure is converted to readable markers:
+
+```
+HTML Input:                          Processed Output:
+<h2>Our Services</h2>        →       ## [Our Services] ##
+<ul>                         →       [LIST START]
+  <li>Web Development</li>   →       - Web Development
+  <li>Security</li>          →       - Security
+</ul>                        →       [LIST END]
+<section>...</section>       →       [SECTION]...[/SECTION]
+<strong>text</strong>        →       **text**
+<a href="url">text</a>       →       text (url)  [if mailto/tel/https]
+```
+
+This helps the LLM identify:
+- Services (under "Services", "What We Do" headings)
+- Contact info (under "Contact" sections)
+- Team members (under "Team", "About Us")
+- FAQs (Question/Answer patterns)
+
+### Processing Steps
+
+1. Remove scripts, styles, comments, iframes, forms
+2. Convert headings to `## [Heading] ##` markers
+3. Convert lists to `- item` format with `[LIST START/END]`
+4. Convert semantic sections to markers
+5. Preserve emphasis (`**bold**`, `*italic*`)
+6. Extract useful links (mailto:, tel:, https://)
+7. Strip remaining HTML
+8. Decode entities and normalize whitespace
+
+### Truncation Logic
+- Default max: 50,000 characters
 - Intelligent truncation at sentence boundaries (. ? !)
 - Must be > 70% of max_chars to break at sentence
 - Truncation indicator added to prompt
+
+## Schema Reference System (v1.1.0+)
+
+The plugin includes a comprehensive schema.org reference that guides the LLM on available properties.
+
+### Supported Schema Types (14 total)
+
+| Type | Description |
+|------|-------------|
+| Organization | Companies, businesses, institutions |
+| LocalBusiness | Businesses with physical locations |
+| Service | Services offered by organizations |
+| Product | Products for sale |
+| Person | Individual people |
+| Event | Events with dates/locations |
+| FAQPage | Pages with Q&A content |
+| Article | Blog posts, news articles |
+| WebPage | Generic web pages |
+| HowTo | Step-by-step instructions |
+| ContactPoint | Contact information |
+| PostalAddress | Physical addresses |
+| Offer | Pricing and availability |
+| Review | User reviews and ratings |
+
+### Dynamic Type Selection
+
+Based on the type hint, relevant schema types are included in the prompt:
+
+- `auto` → WebPage, Article, Service, LocalBusiness, FAQPage, Organization + supporting types
+- `LocalBusiness` → LocalBusiness, ContactPoint, PostalAddress, Offer, Review
+- `Service` → Service, Organization, ContactPoint, Offer
+- etc.
+
+This keeps the prompt focused and within token limits (~1,500 extra tokens for standard reference).
+
+### @graph and @id References
+
+The LLM is guided to use linked entities:
+
+```json
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {"@type": "Organization", "@id": "#organization", "name": "..."},
+    {"@type": "Service", "provider": {"@id": "#organization"}}
+  ]
+}
+```
 
 ## Rate Limiting & Retry
 
