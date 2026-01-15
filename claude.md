@@ -242,6 +242,77 @@ When implementing, ensure:
 - Authentication: Bearer token in header
 - Request format: OpenAI-compatible
 
+## Token Management
+
+Understanding how tokens work is important for configuring the plugin correctly.
+
+### Token Types
+
+1. **Input Tokens** - What we send to the LLM:
+   - System prompt (~2,000-3,000 tokens)
+   - Schema.org reference (~500-1,500 tokens depending on type hint)
+   - Page content (varies by page size)
+   - Site data and metadata (~100-200 tokens)
+
+2. **Output Tokens** - What the LLM returns:
+   - The generated JSON-LD schema
+   - Controlled by `max_tokens` setting
+
+### Context Window
+
+DeepSeek-chat has a **64,000 token context window**. This is the total limit for input + output combined.
+
+```
+Context Window (64K) = Input Tokens + Output Tokens
+```
+
+### Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `max_tokens` | 8000 | Maximum tokens for LLM response (JSON-LD output) |
+| `max_content_chars` | 50000 | Maximum characters of page content to process |
+
+### Dynamic Token Calculation
+
+The plugin automatically calculates safe output tokens to prevent exceeding the context window:
+
+```
+Available Output = Context Window (64K) - Input Tokens - Safety Buffer (2K)
+Actual Max Tokens = min(requested_max_tokens, available_output, model_max_8192)
+```
+
+**Token Estimation:**
+- ~3.5 characters per token (conservative for mixed content)
+- 50,000 chars ≈ ~14,000 tokens
+
+**Example Calculation:**
+- System prompt + reference: ~3,000 tokens
+- Page content (30K chars): ~8,500 tokens
+- Overhead: ~500 tokens
+- **Total input: ~12,000 tokens**
+- **Available for output: 64,000 - 12,000 - 2,000 = 50,000 tokens**
+- **Actual max_tokens: min(8000, 50000, 8192) = 8000**
+
+### Safety Features
+
+1. **Minimum Output Guarantee**: Always reserves at least 1,000 tokens for output
+2. **Safety Buffer**: 2,000 tokens reserved to account for estimation errors
+3. **Warning Logging**: Logs a warning if input is too large (when debug enabled)
+
+### When Content is Too Large
+
+If a page exceeds the context window:
+1. Content is truncated at `max_content_chars` (50,000 chars)
+2. Truncation happens at sentence boundaries when possible
+3. A truncation indicator is added to the prompt
+4. The LLM generates schema based on available content
+
+For extremely large pages, consider:
+- Reducing `max_content_chars` in settings
+- Breaking content into separate pages
+- Using excerpts/summaries for very long content
+
 ## Hooks & Filters Available
 
 ```php
@@ -269,4 +340,15 @@ do_action('ai_jsonld_regenerate', $post_id);
 
 ## Current Status
 
-This is the initial specification phase. No code has been written yet. The next step is to implement the file structure and core classes following this specification.
+**Version 1.1.1** - Plugin is fully implemented and functional.
+
+### Implemented Features:
+- DeepSeek LLM integration with comprehensive prompts
+- HTML structure preservation for better content understanding
+- Comprehensive schema.org reference (14 types)
+- Dynamic token management to prevent context overflow
+- Encrypted API key storage (AES-256-CBC)
+- Caching with content hash validation
+- Rate limiting and retry logic
+- SEO plugin conflict detection
+- Frontend schema output in `<head>`

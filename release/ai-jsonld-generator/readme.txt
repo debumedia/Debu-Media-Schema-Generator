@@ -4,7 +4,7 @@ Tags: schema, json-ld, seo, structured data, ai, deepseek
 Requires at least: 5.0
 Tested up to: 6.4
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -53,6 +53,12 @@ Version 1.0 supports Pages by default. You can enable additional post types in t
 
 == Changelog ==
 
+= 1.1.1 =
+* Increased default max_tokens to 8000 and max_content_chars to 50000
+* Added dynamic token calculation to prevent context window overflow
+* Plugin now automatically adjusts output tokens based on input size
+* Added comprehensive token management documentation
+
 = 1.1.0 =
 * Enhanced schema generation with richer, more comprehensive output
 * Added HTML structure preservation for better content understanding
@@ -71,6 +77,9 @@ Version 1.0 supports Pages by default. You can enable additional post types in t
 * Frontend schema output
 
 == Upgrade Notice ==
+
+= 1.1.1 =
+Improved token handling: full pages now processed without truncation, with automatic safeguards against context overflow.
 
 = 1.1.0 =
 Major enhancement: Schema output now includes services, contact info, team members, and more detailed structured data. Regenerate schemas for existing pages to get richer output.

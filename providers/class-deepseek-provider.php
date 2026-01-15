@@ -26,6 +26,26 @@ class AI_JSONLD_DeepSeek_Provider extends AI_JSONLD_Abstract_Provider {
     const DEFAULT_MODEL = 'deepseek-chat';
 
     /**
+     * Context window size (total input + output tokens)
+     */
+    const CONTEXT_WINDOW = 64000;
+
+    /**
+     * Maximum output tokens supported by model
+     */
+    const MAX_OUTPUT_TOKENS = 8192;
+
+    /**
+     * Minimum output tokens to ensure useful response
+     */
+    const MIN_OUTPUT_TOKENS = 1000;
+
+    /**
+     * Safety buffer for token estimation (tokens reserved)
+     */
+    const TOKEN_SAFETY_BUFFER = 2000;
+
+    /**
      * Get provider name
      *
      * @return string
@@ -83,12 +103,16 @@ class AI_JSONLD_DeepSeek_Provider extends AI_JSONLD_Abstract_Provider {
         // Build messages
         $messages = $this->build_messages( $payload );
 
+        // Calculate safe max_tokens based on input size
+        $requested_max_tokens = intval( $settings['max_tokens'] ?? 8000 );
+        $safe_max_tokens      = $this->calculate_safe_max_tokens( $messages, $requested_max_tokens );
+
         // Build request body
         $body = array(
             'model'       => $settings['deepseek_model'] ?? self::DEFAULT_MODEL,
             'messages'    => $messages,
             'temperature' => floatval( $settings['temperature'] ?? 0.2 ),
-            'max_tokens'  => intval( $settings['max_tokens'] ?? 1200 ),
+            'max_tokens'  => $safe_max_tokens,
         );
 
         // Make request
@@ -388,5 +412,67 @@ SITE DATA:
             'error'       => '',
             'headers'     => array(),
         );
+    }
+
+    /**
+     * Calculate safe max_tokens based on input size
+     *
+     * Ensures we don't exceed the context window by dynamically
+     * adjusting output tokens based on input token estimate.
+     *
+     * @param array $messages   The messages array to be sent.
+     * @param int   $requested  The requested max_tokens from settings.
+     * @return int Safe max_tokens value.
+     */
+    private function calculate_safe_max_tokens( array $messages, int $requested ): int {
+        // Estimate input tokens
+        $input_tokens = $this->estimate_tokens( $messages );
+
+        // Calculate available tokens for output
+        $available = self::CONTEXT_WINDOW - $input_tokens - self::TOKEN_SAFETY_BUFFER;
+
+        // Ensure we have at least minimum tokens for a useful response
+        if ( $available < self::MIN_OUTPUT_TOKENS ) {
+            // Log warning if debug enabled
+            AI_JSONLD_Generator::log(
+                sprintf(
+                    'Input too large: ~%d tokens estimated, only %d available for output',
+                    $input_tokens,
+                    $available
+                ),
+                'warning'
+            );
+            return self::MIN_OUTPUT_TOKENS;
+        }
+
+        // Cap at model's maximum output and requested amount
+        $max_allowed = min( self::MAX_OUTPUT_TOKENS, $available );
+
+        return min( $requested, $max_allowed );
+    }
+
+    /**
+     * Estimate token count for messages
+     *
+     * Uses a rough estimate of ~4 characters per token for English text.
+     * This is conservative to avoid underestimating.
+     *
+     * @param array $messages Messages array.
+     * @return int Estimated token count.
+     */
+    private function estimate_tokens( array $messages ): int {
+        $total_chars = 0;
+
+        foreach ( $messages as $message ) {
+            $content = $message['content'] ?? '';
+            $total_chars += mb_strlen( $content );
+
+            // Add overhead for message structure
+            $total_chars += 10;
+        }
+
+        // Estimate: ~4 characters per token (conservative for mixed content)
+        // JSON and code tend to have more tokens per character
+        return (int) ceil( $total_chars / 3.5 );
     }
 }

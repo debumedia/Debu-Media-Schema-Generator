@@ -3,7 +3,7 @@
  * Plugin Name: AI JSON-LD Generator
  * Plugin URI: https://example.com/ai-jsonld-generator
  * Description: Automatically generates schema.org JSON-LD structured data for WordPress pages using AI (DeepSeek).
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: Debu Media
  * Author URI: https://example.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Plugin constants
-define( 'AI_JSONLD_VERSION', '1.1.0' );
+define( 'AI_JSONLD_VERSION', '1.1.1' );
 define( 'AI_JSONLD_PLUGIN_FILE', __FILE__ );
 define( 'AI_JSONLD_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AI_JSONLD_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -200,8 +200,8 @@ final class AI_JSONLD_Generator {
             'deepseek_api_key'           => '',
             'deepseek_model'             => 'deepseek-chat',
             'temperature'                => 0.2,
-            'max_tokens'                 => 1200,
-            'max_content_chars'          => 8000,
+            'max_tokens'                 => 8000,
+            'max_content_chars'          => 50000,
             'output_location'            => 'head',
             'enabled_post_types'         => array( 'page' ),
             'auto_regenerate_on_update'  => false,
@@ -249,8 +249,8 @@ final class AI_JSONLD_Generator {
             'deepseek_api_key'           => '',
             'deepseek_model'             => 'deepseek-chat',
             'temperature'                => 0.2,
-            'max_tokens'                 => 1200,
-            'max_content_chars'          => 8000,
+            'max_tokens'                 => 8000,
+            'max_content_chars'          => 50000,
             'output_location'            => 'head',
             'enabled_post_types'         => array( 'page' ),
             'auto_regenerate_on_update'  => false,

@@ -18,7 +18,7 @@ class AI_JSONLD_Content_Processor {
     /**
      * Default maximum content characters
      */
-    const DEFAULT_MAX_CHARS = 8000;
+    const DEFAULT_MAX_CHARS = 50000;
 
     /**
      * Minimum percentage of max_chars to break at sentence
