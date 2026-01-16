@@ -269,7 +269,7 @@ class WP_AI_Schema_Metabox {
 
         wp_localize_script(
             'ai-jsonld-metabox',
-            'aiJsonldMetabox',
+            'wpAiSchemaMetabox',
             array(
                 'ajax_url' => admin_url( 'admin-ajax.php' ),
                 'nonce'    => wp_create_nonce( 'wp_ai_schema_generate_' . $post->ID ),

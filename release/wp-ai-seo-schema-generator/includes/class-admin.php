@@ -474,7 +474,7 @@ class WP_AI_Schema_Admin {
 
         wp_localize_script(
             'ai-jsonld-admin',
-            'aiJsonldAdmin',
+            'wpAiSchemaAdmin',
             array(
                 'ajax_url' => admin_url( 'admin-ajax.php' ),
                 'nonce'    => wp_create_nonce( 'wp_ai_schema_test_connection' ),
