@@ -3,12 +3,12 @@
  */
 
 /* Metabox wrapper */
-.wp-ai-schema-metabox {
+.ai-jsonld-metabox {
     padding: 10px 0;
 }
 
 /* Notice styles */
-.wp-ai-schema-notice {
+.ai-jsonld-notice {
     padding: 10px 12px;
     margin-bottom: 15px;
     border-left: 4px solid #dba617;
@@ -16,26 +16,26 @@
     color: #856404;
 }
 
-.wp-ai-schema-notice-warning {
+.ai-jsonld-notice-warning {
     border-left-color: #dba617;
     background: #fff3cd;
     color: #856404;
 }
 
-.wp-ai-schema-notice-error {
+.ai-jsonld-notice-error {
     border-left-color: #dc3545;
     background: #f8d7da;
     color: #721c24;
 }
 
-.wp-ai-schema-notice-success {
+.ai-jsonld-notice-success {
     border-left-color: #28a745;
     background: #d4edda;
     color: #155724;
 }
 
 /* Controls section */
-.wp-ai-schema-controls {
+.ai-jsonld-controls {
     display: flex;
     flex-wrap: wrap;
     gap: 15px;
@@ -45,55 +45,55 @@
     border-bottom: 1px solid #dcdcde;
 }
 
-.wp-ai-schema-type-selector {
+.ai-jsonld-type-selector {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.wp-ai-schema-type-selector label {
+.ai-jsonld-type-selector label {
     font-weight: 500;
     white-space: nowrap;
 }
 
-.wp-ai-schema-type-selector select {
+.ai-jsonld-type-selector select {
     min-width: 180px;
 }
 
-.wp-ai-schema-options {
+.ai-jsonld-options {
     display: flex;
     align-items: center;
 }
 
-.wp-ai-schema-options label {
+.ai-jsonld-options label {
     display: flex;
     align-items: center;
     gap: 5px;
     cursor: pointer;
 }
 
-.wp-ai-schema-actions {
+.ai-jsonld-actions {
     display: flex;
     align-items: center;
     gap: 10px;
     margin-left: auto;
 }
 
-.wp-ai-schema-spinner {
+.ai-jsonld-spinner {
     float: none;
     margin: 0;
 }
 
-.wp-ai-schema-spinner.is-active {
+.ai-jsonld-spinner.is-active {
     visibility: visible;
 }
 
 /* Status section */
-.wp-ai-schema-status {
+.ai-jsonld-status {
     margin-bottom: 15px;
 }
 
-.wp-ai-schema-status-label {
+.ai-jsonld-status-label {
     display: inline-block;
     padding: 4px 8px;
     border-radius: 3px;
@@ -102,27 +102,27 @@
     margin-right: 10px;
 }
 
-.wp-ai-schema-status-none {
+.ai-jsonld-status-none {
     background: #f0f0f1;
     color: #666;
 }
 
-.wp-ai-schema-status-current {
+.ai-jsonld-status-current {
     background: #d4edda;
     color: #155724;
 }
 
-.wp-ai-schema-status-outdated {
+.ai-jsonld-status-outdated {
     background: #fff3cd;
     color: #856404;
 }
 
-.wp-ai-schema-generated-time {
+.ai-jsonld-generated-time {
     font-size: 12px;
     color: #666;
 }
 
-.wp-ai-schema-error {
+.ai-jsonld-error {
     margin-top: 10px;
     padding: 8px 12px;
     background: #f8d7da;
@@ -132,23 +132,23 @@
 }
 
 /* Preview section */
-.wp-ai-schema-preview {
+.ai-jsonld-preview {
     margin-top: 15px;
 }
 
-.wp-ai-schema-preview > label {
+.ai-jsonld-preview > label {
     display: block;
     font-weight: 500;
     margin-bottom: 8px;
 }
 
-.wp-ai-schema-preview-actions {
+.ai-jsonld-preview-actions {
     margin-bottom: 8px;
     display: flex;
     gap: 5px;
 }
 
-#wp_ai_schema_schema_preview {
+#ai_jsonld_schema_preview {
     font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
     font-size: 12px;
     line-height: 1.5;
@@ -158,44 +158,44 @@
     min-height: 150px;
 }
 
-#wp_ai_schema_schema_preview:empty::before {
+#ai_jsonld_schema_preview:empty::before {
     content: 'No schema generated yet. Click "Generate JSON-LD" to create one.';
     color: #999;
     font-style: italic;
 }
 
 /* Message area */
-.wp-ai-schema-message {
+.ai-jsonld-message {
     padding: 10px 12px;
     margin-top: 15px;
     border-radius: 3px;
     font-size: 13px;
 }
 
-.wp-ai-schema-message.hidden {
+.ai-jsonld-message.hidden {
     display: none;
 }
 
-.wp-ai-schema-message.success {
+.ai-jsonld-message.success {
     background: #d4edda;
     border: 1px solid #c3e6cb;
     color: #155724;
 }
 
-.wp-ai-schema-message.error {
+.ai-jsonld-message.error {
     background: #f8d7da;
     border: 1px solid #f5c6cb;
     color: #721c24;
 }
 
-.wp-ai-schema-message.info {
+.ai-jsonld-message.info {
     background: #d1ecf1;
     border: 1px solid #bee5eb;
     color: #0c5460;
 }
 
 /* Cooldown indicator */
-.wp-ai-schema-cooldown {
+.ai-jsonld-cooldown {
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -205,37 +205,37 @@
 
 /* Responsive adjustments */
 @media screen and (max-width: 782px) {
-    .wp-ai-schema-controls {
+    .ai-jsonld-controls {
         flex-direction: column;
         align-items: stretch;
     }
 
-    .wp-ai-schema-actions {
+    .ai-jsonld-actions {
         margin-left: 0;
         margin-top: 10px;
     }
 
-    .wp-ai-schema-type-selector {
+    .ai-jsonld-type-selector {
         flex-direction: column;
         align-items: flex-start;
     }
 
-    .wp-ai-schema-type-selector select {
+    .ai-jsonld-type-selector select {
         width: 100%;
     }
 }
 
 /* Button states */
-#wp_ai_schema_generate:disabled {
+#ai_jsonld_generate:disabled {
     cursor: not-allowed;
 }
 
-#wp_ai_schema_generate.generating {
+#ai_jsonld_generate.generating {
     opacity: 0.7;
 }
 
 /* Validation indicator */
-.wp-ai-schema-validation {
+.ai-jsonld-validation {
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -244,12 +244,12 @@
     border-radius: 3px;
 }
 
-.wp-ai-schema-validation.valid {
+.ai-jsonld-validation.valid {
     background: #d4edda;
     color: #155724;
 }
 
-.wp-ai-schema-validation.invalid {
+.ai-jsonld-validation.invalid {
     background: #f8d7da;
     color: #721c24;
 }

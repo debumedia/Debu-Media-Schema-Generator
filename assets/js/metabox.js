@@ -32,10 +32,10 @@
      */
     function generateSchema() {
         var $button = $('#wp_ai_schema_generate');
-        var $spinner = $('.wp-ai-schema-spinner');
+        var $spinner = $('.ai-jsonld-spinner');
         var $preview = $('#wp_ai_schema_schema_preview');
         var $message = $('#wp_ai_schema_message');
-        var $status = $('.wp-ai-schema-status');
+        var $status = $('.ai-jsonld-status');
 
         var typeHint = $('#wp_ai_schema_type_hint').val();
         var forceRegenerate = $('#wp_ai_schema_force_regenerate').is(':checked');
@@ -170,7 +170,7 @@
      * Update status display
      */
     function updateStatus(isCurrent, generatedAt) {
-        var $status = $('.wp-ai-schema-status');
+        var $status = $('.ai-jsonld-status');
         var statusHtml = '';
 
         if (isCurrent) {

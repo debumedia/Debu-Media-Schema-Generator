@@ -1,5 +1,5 @@
 /**
- * AI JSON-LD Generator - Admin Settings JS
+ * WP AI SEO Schema Generator - Admin Settings JS
  */
 
 (function($) {
@@ -88,8 +88,8 @@
      * Bind location repeater functionality
      */
     function bindLocationRepeater() {
-        var $container = $('#wp-ai-schema-locations');
-        var $addButton = $('#wp-ai-schema-add-location');
+        var $container = $('#ai-jsonld-locations');
+        var $addButton = $('#ai-jsonld-add-location');
 
         if ($container.length === 0) {
             return;
@@ -102,9 +102,9 @@
         });
 
         // Remove location (delegated)
-        $container.on('click', '.wp-ai-schema-remove-location', function(e) {
+        $container.on('click', '.ai-jsonld-remove-location', function(e) {
             e.preventDefault();
-            removeLocation($(this).closest('.wp-ai-schema-location'));
+            removeLocation($(this).closest('.ai-jsonld-location'));
         });
     }
 
@@ -112,8 +112,8 @@
      * Add a new location block
      */
     function addLocation() {
-        var $container = $('#wp-ai-schema-locations');
-        var $locations = $container.find('.wp-ai-schema-location');
+        var $container = $('#ai-jsonld-locations');
+        var $locations = $container.find('.ai-jsonld-location');
         var newIndex = $locations.length;
 
         // Clone the first location as template
@@ -139,10 +139,10 @@
         $template.find('.location-number').text(newIndex + 1);
 
         // Show remove button
-        $template.find('.wp-ai-schema-remove-location').show();
+        $template.find('.ai-jsonld-remove-location').show();
 
         // Also show remove button on existing locations
-        $container.find('.wp-ai-schema-remove-location').show();
+        $container.find('.ai-jsonld-remove-location').show();
 
         // Append to container
         $container.append($template);
@@ -155,8 +155,8 @@
      * Remove a location block
      */
     function removeLocation($location) {
-        var $container = $('#wp-ai-schema-locations');
-        var $locations = $container.find('.wp-ai-schema-location');
+        var $container = $('#ai-jsonld-locations');
+        var $locations = $container.find('.ai-jsonld-location');
 
         // Don't remove if it's the last one
         if ($locations.length <= 1) {
@@ -174,8 +174,8 @@
      * Reindex all locations after removal
      */
     function reindexLocations() {
-        var $container = $('#wp-ai-schema-locations');
-        var $locations = $container.find('.wp-ai-schema-location');
+        var $container = $('#ai-jsonld-locations');
+        var $locations = $container.find('.ai-jsonld-location');
 
         $locations.each(function(index) {
             var $location = $(this);
@@ -196,7 +196,7 @@
 
         // Hide remove button if only one location remains
         if ($locations.length <= 1) {
-            $locations.find('.wp-ai-schema-remove-location').hide();
+            $locations.find('.ai-jsonld-remove-location').hide();
         }
     }
 
