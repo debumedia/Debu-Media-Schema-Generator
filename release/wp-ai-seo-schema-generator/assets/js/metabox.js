@@ -11,6 +11,22 @@
     var progressStep = 0;
 
     /**
+     * Debug logging - outputs to browser console when enabled
+     * Enable via: wpAiSchemaMetabox.debug = true (set in PHP when debug_logging is on)
+     */
+    var debugLog = function(label, data) {
+        if (wpAiSchemaMetabox.debug) {
+            console.group('%c[AI Schema Debug] ' + label, 'color: #0073aa; font-weight: bold;');
+            if (typeof data === 'object') {
+                console.log(JSON.parse(JSON.stringify(data))); // Deep clone for clean output
+            } else {
+                console.log(data);
+            }
+            console.groupEnd();
+        }
+    };
+
+    /**
      * Progress steps for visual feedback (while waiting for API)
      */
     var progressSteps = [
@@ -155,21 +171,36 @@
             startProgress();
         }
 
+        // Build request data
+        var requestData = {
+            action: 'wp_ai_schema_generate',
+            nonce: wpAiSchemaMetabox.nonce,
+            post_id: wpAiSchemaMetabox.post_id,
+            type_hint: typeHint,
+            force: forceRegenerate ? 1 : 0,
+            fetch_frontend: fetchFrontend ? 1 : 0,
+            deep_analysis: deepAnalysis ? 1 : 0
+        };
+
+        // Debug: Log request
+        debugLog('Request Parameters', {
+            postId: wpAiSchemaMetabox.post_id,
+            typeHint: typeHint,
+            forceRegenerate: forceRegenerate,
+            fetchFrontend: fetchFrontend,
+            deepAnalysis: deepAnalysis,
+            timeout: deepAnalysis ? '5 min' : '2.5 min'
+        });
+
         // Make AJAX request
         $.ajax({
             url: wpAiSchemaMetabox.ajax_url,
             type: 'POST',
             timeout: deepAnalysis ? 300000 : 150000, // 5 min for two-pass, 2.5 min for single pass
-            data: {
-                action: 'wp_ai_schema_generate',
-                nonce: wpAiSchemaMetabox.nonce,
-                post_id: wpAiSchemaMetabox.post_id,
-                type_hint: typeHint,
-                force: forceRegenerate ? 1 : 0,
-                fetch_frontend: fetchFrontend ? 1 : 0,
-                deep_analysis: deepAnalysis ? 1 : 0
-            },
+            data: requestData,
             success: function(response) {
+                // Debug: Log full response
+                debugLog('Full Response', response);
                 // Stop the waiting progress
                 stopProgress();
 

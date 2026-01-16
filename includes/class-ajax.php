@@ -441,28 +441,37 @@ class WP_AI_Schema_Ajax {
         // Set cooldown before API calls
         set_transient( $cooldown_key, true, self::COOLDOWN_SECONDS * 2 ); // Double cooldown for two-pass
 
+        // Track timing for debugging
+        $debug_timing          = array();
+        $two_pass_start        = microtime( true );
+
         WP_AI_Schema_Generator::log( sprintf( 'Starting two-pass schema generation for post %d', $post_id ) );
 
         // ========================
         // PASS 1: Content Analysis
         // ========================
+        $pass1_start = microtime( true );
         WP_AI_Schema_Generator::log( 'Pass 1: Analyzing content...' );
 
         $analysis_result = $this->content_analyzer->analyze( $post_id, $settings, $frontend_content );
 
+        $pass1_duration              = round( microtime( true ) - $pass1_start, 2 );
+        $debug_timing['pass1_seconds'] = $pass1_duration;
+
         if ( ! $analysis_result['success'] ) {
             $this->save_error( $post_id, 'Pass 1 failed: ' . $analysis_result['error'] );
-            WP_AI_Schema_Generator::log( sprintf( 'Pass 1 failed for post %d: %s', $post_id, $analysis_result['error'] ), 'error' );
+            WP_AI_Schema_Generator::log( sprintf( 'Pass 1 failed for post %d after %.2fs: %s', $post_id, $pass1_duration, $analysis_result['error'] ), 'error' );
 
             return array(
                 'success' => false,
                 'message' => __( 'Content analysis failed: ', 'wp-ai-seo-schema-generator' ) . $analysis_result['error'],
                 'pass'    => 1,
+                'debug'   => array( 'timing' => $debug_timing ),
             );
         }
 
         $analyzed_data = $analysis_result['data'];
-        WP_AI_Schema_Generator::log( 'Pass 1 completed. Analyzed data: ' . wp_json_encode( array_keys( $analyzed_data ) ) );
+        WP_AI_Schema_Generator::log( sprintf( 'Pass 1 completed in %.2fs. Keys: %s', $pass1_duration, implode( ', ', array_keys( $analyzed_data ) ) ) );
 
         // Store analysis result for debugging (optional)
         update_post_meta( $post_id, '_wp_ai_schema_analysis', wp_json_encode( $analyzed_data ) );
@@ -470,6 +479,7 @@ class WP_AI_Schema_Ajax {
         // ========================
         // PASS 2: Schema Generation
         // ========================
+        $pass2_start = microtime( true );
         WP_AI_Schema_Generator::log( 'Pass 2: Generating schema from analyzed data...' );
 
         // Get model config
@@ -486,20 +496,34 @@ class WP_AI_Schema_Ajax {
                 'success' => false,
                 'message' => __( 'Failed to prepare analyzed data for schema generation.', 'wp-ai-seo-schema-generator' ),
                 'pass'    => 2,
+                'debug'   => array( 'timing' => $debug_timing ),
             );
         }
+
+        // Calculate payload size for debugging
+        $payload_json                      = wp_json_encode( $payload );
+        $payload_size_kb                   = round( strlen( $payload_json ) / 1024, 1 );
+        $debug_timing['pass2_payload_kb']  = $payload_size_kb;
+
+        WP_AI_Schema_Generator::log( sprintf( 'Pass 2 payload size: %.1f KB', $payload_size_kb ) );
 
         // Call provider to generate schema
         $response = $provider->generate_schema( $payload, $settings );
 
+        $pass2_duration                = round( microtime( true ) - $pass2_start, 2 );
+        $debug_timing['pass2_seconds'] = $pass2_duration;
+
+        WP_AI_Schema_Generator::log( sprintf( 'Pass 2 API call completed in %.2fs', $pass2_duration ) );
+
         if ( ! $response['success'] ) {
             $this->save_error( $post_id, 'Pass 2 failed: ' . $response['error'] );
-            WP_AI_Schema_Generator::log( sprintf( 'Pass 2 failed for post %d: %s', $post_id, $response['error'] ), 'error' );
+            WP_AI_Schema_Generator::log( sprintf( 'Pass 2 failed for post %d after %.2fs: %s', $post_id, $pass2_duration, $response['error'] ), 'error' );
 
             return array(
                 'success' => false,
                 'message' => __( 'Schema generation failed: ', 'wp-ai-seo-schema-generator' ) . $response['error'],
                 'pass'    => 2,
+                'debug'   => array( 'timing' => $debug_timing ),
             );
         }
 
@@ -514,8 +538,13 @@ class WP_AI_Schema_Ajax {
                 'success' => false,
                 'message' => $validation['error'],
                 'pass'    => 2,
+                'debug'   => array( 'timing' => $debug_timing ),
             );
         }
+
+        // Calculate total time
+        $total_duration                = round( microtime( true ) - $two_pass_start, 2 );
+        $debug_timing['total_seconds'] = $total_duration;
 
         // Save schema
         $hash = $this->content_processor->generate_hash( $post_id, $settings );
@@ -549,6 +578,7 @@ class WP_AI_Schema_Ajax {
         // Include debug data when debug logging is enabled
         if ( ! empty( $settings['debug_logging'] ) ) {
             $result['debug'] = array(
+                'timing'         => $debug_timing,
                 'pass1_analysis' => $analyzed_data,
                 'pass2_payload'  => array(
                     'page'            => $payload['page'] ?? null,
@@ -558,11 +588,20 @@ class WP_AI_Schema_Ajax {
                     'analyzedContent' => $payload['analyzedContent'] ?? null,
                     // Note: schemaReference is large, so we just note it was included
                     'hasSchemaRef'    => ! empty( $payload['schemaReference'] ),
+                    'schemaRefSize'   => ! empty( $payload['schemaReference'] ) ? round( strlen( $payload['schemaReference'] ) / 1024, 1 ) . ' KB' : '0 KB',
                 ),
                 'provider'       => $provider_slug,
                 'model'          => $model,
             );
         }
+
+        WP_AI_Schema_Generator::log( sprintf( 
+            'Two-pass completed for post %d - Pass 1: %.2fs, Pass 2: %.2fs, Total: %.2fs', 
+            $post_id, 
+            $debug_timing['pass1_seconds'], 
+            $debug_timing['pass2_seconds'], 
+            $debug_timing['total_seconds'] 
+        ) );
 
         return $result;
     }

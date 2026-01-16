@@ -325,6 +325,11 @@ class WP_AI_Schema_Prompt_Builder {
      * This method builds a payload optimized for schema generation from
      * already-classified content data.
      *
+     * NOTE: We do NOT include schemaReference here because:
+     * 1. The analyzed data is already structured
+     * 2. The get_schema_from_analysis_system_prompt() contains detailed schema type definitions
+     * 3. Reduces payload size significantly for faster API calls
+     *
      * @param int   $post_id           Post ID.
      * @param array $analyzed_data     Data from content analyzer (Pass 1).
      * @param array $settings          Plugin settings.
@@ -340,13 +345,15 @@ class WP_AI_Schema_Prompt_Builder {
 
         $type_hint = $this->get_type_hint( $post_id );
 
+        // Note: schemaReference is intentionally excluded - the system prompt
+        // for analyzed content already contains all necessary schema type definitions
         return array(
             'page'              => $this->build_page_data_minimal( $post ),
             'site'              => $this->build_site_data(),
             'business'          => $this->build_business_data( $settings ),
             'analyzedContent'   => $analyzed_data,
             'typeHint'          => $type_hint,
-            'schemaReference'   => $this->build_schema_reference( $type_hint ),
+            'schemaReference'   => '', // Empty - schema info is in system prompt
             'isFromAnalysis'    => true,
         );
     }
