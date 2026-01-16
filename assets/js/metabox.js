@@ -296,6 +296,13 @@
         }
 
         switch (eventType) {
+            case 'debug':
+                // Show debug info in console
+                console.group('%c[AI Schema Debug] ' + (data.phase || 'info'), 'color: #ff6b00; font-weight: bold;');
+                console.log(data);
+                console.groupEnd();
+                break;
+
             case 'keepalive':
                 // Update elapsed time and show waiting message
                 var waitMessages = [

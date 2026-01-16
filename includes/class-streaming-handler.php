@@ -449,21 +449,28 @@ class WP_AI_Schema_Streaming_Handler {
             );
         }
 
-        // Debug logging for performance analysis
+        // Debug logging - send to frontend via SSE
         $payload_size_kb = round( strlen( wp_json_encode( $body ) ) / 1024, 2 );
         $messages_size_kb = round( strlen( wp_json_encode( $messages ) ) / 1024, 2 );
         
-        WP_AI_Schema_Generator::log( "=== {$phase} Streaming Request ===" );
-        WP_AI_Schema_Generator::log( "Endpoint: {$endpoint}" );
-        WP_AI_Schema_Generator::log( "Model: {$model}" );
-        WP_AI_Schema_Generator::log( "Max tokens: {$max_tokens}" );
-        WP_AI_Schema_Generator::log( "Total payload size: {$payload_size_kb} KB" );
-        WP_AI_Schema_Generator::log( "Messages size: {$messages_size_kb} KB" );
-        WP_AI_Schema_Generator::log( "Request params: " . wp_json_encode( array_keys( $body ) ) );
-        
-        if ( 'openai' === $provider_slug && isset( $body['reasoning'] ) ) {
-            WP_AI_Schema_Generator::log( "Reasoning effort: " . $body['reasoning']['effort'] );
-        }
+        // Send debug info to browser
+        $this->send_sse_event( 'debug', array(
+            'phase'            => $phase,
+            'endpoint'         => $endpoint,
+            'model'            => $model,
+            'max_tokens'       => $max_tokens,
+            'payload_size_kb'  => $payload_size_kb,
+            'messages_size_kb' => $messages_size_kb,
+            'params'           => array_keys( $body ),
+            'reasoning_effort' => $body['reasoning']['effort'] ?? 'none',
+            'has_stream'       => isset( $body['stream'] ) ? 'yes' : 'no',
+        ) );
+
+        // Send "starting request" event
+        $this->send_sse_event( 'status', array(
+            'phase'   => $phase,
+            'message' => $phase === 'pass1' ? 'Starting content analysis...' : 'Starting schema generation...',
+        ) );
 
         $request_start = microtime( true );
 
@@ -471,7 +478,13 @@ class WP_AI_Schema_Streaming_Handler {
         $result = $this->make_streaming_request( $endpoint, $api_key, $body, $phase );
         
         $request_duration = round( microtime( true ) - $request_start, 2 );
-        WP_AI_Schema_Generator::log( "{$phase} completed in {$request_duration}s" );
+        
+        // Send completion debug info
+        $this->send_sse_event( 'debug', array(
+            'phase'    => $phase,
+            'duration' => $request_duration,
+            'success'  => $result['success'],
+        ) );
         
         return $result;
     }
@@ -616,6 +629,11 @@ class WP_AI_Schema_Streaming_Handler {
 
         if ( $error ) {
             WP_AI_Schema_Generator::log( "cURL error: {$error}", 'error' );
+            $this->send_sse_event( 'debug', array(
+                'error_type' => 'curl',
+                'error'      => $error,
+                'phase'      => $phase,
+            ) );
             return array(
                 'success' => false,
                 'content' => null,
@@ -637,6 +655,12 @@ class WP_AI_Schema_Streaming_Handler {
             }
 
             WP_AI_Schema_Generator::log( "API error {$http_code}: {$error_detail}", 'error' );
+            $this->send_sse_event( 'debug', array(
+                'error_type' => 'http',
+                'http_code'  => $http_code,
+                'error'      => $error_msg,
+                'phase'      => $phase,
+            ) );
 
             return array(
                 'success' => false,
