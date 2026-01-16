@@ -397,10 +397,16 @@ class WP_AI_Schema_Streaming_Handler {
         $model_key     = $provider_slug . '_model';
         $model         = $settings[ $model_key ] ?? '';
 
-        // Fallback to default model if not set
+        // Fallback to provider's default model if not set
         if ( empty( $model ) ) {
-            $model = 'deepseek' === $provider_slug ? 'deepseek-chat' : 'gpt-4o-mini';
-            WP_AI_Schema_Generator::log( "Model not set, using default: {$model}" );
+            if ( 'deepseek' === $provider_slug ) {
+                $model = 'deepseek-chat';
+            } elseif ( 'openai' === $provider_slug ) {
+                $model = 'gpt-5-nano'; // OpenAI default - MUST be gpt-5 for reasoning optimization
+            } else {
+                $model = 'gpt-4o-mini'; // Generic fallback
+            }
+            WP_AI_Schema_Generator::log( "Model not set in settings, using provider default: {$model}" );
         }
 
         // Get API endpoint
