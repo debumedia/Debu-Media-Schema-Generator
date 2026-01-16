@@ -117,7 +117,7 @@ class WP_AI_Schema_Validator {
      * Extract JSON from mixed content
      *
      * Handles cases where the LLM returns JSON wrapped in markdown code blocks
-     * or with explanatory text.
+     * or with explanatory text. Uses multiple strategies with fallbacks.
      *
      * @param string $content Raw content from LLM.
      * @return string Extracted JSON or empty string.
@@ -125,33 +125,151 @@ class WP_AI_Schema_Validator {
     private function extract_json( string $content ): string {
         $content = trim( $content );
 
-        // If it already looks like valid JSON, return it
+        if ( empty( $content ) ) {
+            return '';
+        }
+
+        // Strategy 1: Content is already valid JSON
         if ( $this->is_json_string( $content ) ) {
             return $content;
         }
 
-        // Try to extract from markdown code blocks
-        if ( preg_match( '/```(?:json)?\s*([\s\S]*?)```/', $content, $matches ) ) {
+        // Strategy 2: Triple backtick code blocks (```json or ```)
+        $extracted = $this->extract_from_triple_backticks( $content );
+        if ( ! empty( $extracted ) ) {
+            return $extracted;
+        }
+
+        // Strategy 3: Single backtick code (inline `{...}`)
+        $extracted = $this->extract_from_single_backticks( $content );
+        if ( ! empty( $extracted ) ) {
+            return $extracted;
+        }
+
+        // Strategy 4: Balanced brace matching for JSON objects
+        $extracted = $this->find_balanced_json( $content, '{', '}' );
+        if ( ! empty( $extracted ) ) {
+            return $extracted;
+        }
+
+        // Strategy 5: Balanced bracket matching for JSON arrays
+        $extracted = $this->find_balanced_json( $content, '[', ']' );
+        if ( ! empty( $extracted ) ) {
+            return $extracted;
+        }
+
+        return '';
+    }
+
+    /**
+     * Extract JSON from triple backtick code blocks
+     *
+     * @param string $content Content to search.
+     * @return string Extracted JSON or empty string.
+     */
+    private function extract_from_triple_backticks( string $content ): string {
+        // Match ```json ... ``` or ``` ... ``` (with optional language identifier)
+        if ( preg_match( '/```(?:json|JSON)?\s*\n?([\s\S]*?)\n?```/', $content, $matches ) ) {
             $extracted = trim( $matches[1] );
             if ( $this->is_json_string( $extracted ) ) {
                 return $extracted;
             }
         }
 
-        // Try to find JSON object or array in the content
-        // Look for { ... } pattern
-        if ( preg_match( '/(\{[\s\S]*\})/', $content, $matches ) ) {
-            $extracted = $matches[1];
+        return '';
+    }
+
+    /**
+     * Extract JSON from single backtick code
+     *
+     * @param string $content Content to search.
+     * @return string Extracted JSON or empty string.
+     */
+    private function extract_from_single_backticks( string $content ): string {
+        // Match `{...}` or `[...]` inline code
+        if ( preg_match( '/`(\{[\s\S]*?\})`/', $content, $matches ) ) {
+            $extracted = trim( $matches[1] );
             if ( $this->is_json_string( $extracted ) ) {
                 return $extracted;
             }
         }
 
-        // Look for [ ... ] pattern (array)
-        if ( preg_match( '/(\[[\s\S]*\])/', $content, $matches ) ) {
-            $extracted = $matches[1];
+        if ( preg_match( '/`(\[[\s\S]*?\])`/', $content, $matches ) ) {
+            $extracted = trim( $matches[1] );
             if ( $this->is_json_string( $extracted ) ) {
                 return $extracted;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Find JSON using balanced brace/bracket matching
+     *
+     * This method properly handles nested structures by counting opening
+     * and closing delimiters, accounting for strings where delimiters
+     * should be ignored.
+     *
+     * @param string $content Content to search.
+     * @param string $open    Opening delimiter ('{' or '[').
+     * @param string $close   Closing delimiter ('}' or ']').
+     * @return string Extracted JSON or empty string.
+     */
+    private function find_balanced_json( string $content, string $open, string $close ): string {
+        // Find the first occurrence of the opening delimiter
+        $start = strpos( $content, $open );
+
+        if ( false === $start ) {
+            return '';
+        }
+
+        $length    = strlen( $content );
+        $depth     = 0;
+        $in_string = false;
+        $escape    = false;
+
+        for ( $i = $start; $i < $length; $i++ ) {
+            $char = $content[ $i ];
+
+            // Handle escape sequences inside strings
+            if ( $escape ) {
+                $escape = false;
+                continue;
+            }
+
+            if ( '\\' === $char && $in_string ) {
+                $escape = true;
+                continue;
+            }
+
+            // Handle string boundaries
+            if ( '"' === $char ) {
+                $in_string = ! $in_string;
+                continue;
+            }
+
+            // Only count delimiters outside of strings
+            if ( ! $in_string ) {
+                if ( $char === $open ) {
+                    $depth++;
+                } elseif ( $char === $close ) {
+                    $depth--;
+
+                    // Found the matching closing delimiter
+                    if ( 0 === $depth ) {
+                        $extracted = substr( $content, $start, $i - $start + 1 );
+
+                        if ( $this->is_json_string( $extracted ) ) {
+                            return $extracted;
+                        }
+
+                        // If this extraction failed, try finding the next JSON object
+                        // This handles cases like: "text {invalid} more text {valid JSON}"
+                        $remaining = substr( $content, $i + 1 );
+                        return $this->find_balanced_json( $remaining, $open, $close );
+                    }
+                }
             }
         }
 
