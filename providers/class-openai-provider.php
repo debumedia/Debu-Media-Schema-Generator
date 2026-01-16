@@ -16,9 +16,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
 
     /**
-     * API endpoint
+     * API endpoint (using Responses API - recommended for GPT-5 models)
      */
-    const API_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+    const API_ENDPOINT = 'https://api.openai.com/v1/responses';
 
     /**
      * Default model
@@ -54,11 +54,23 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
      * To add a new model, add an entry to this array.
      */
     const MODELS = array(
+        'gpt-4o-mini' => array(
+            'name'              => 'GPT-4o Mini (Fast)',
+            'context_window'    => 128000,
+            'max_output'        => 16384,
+            'max_content_chars' => 80000,
+        ),
+        'gpt-4o' => array(
+            'name'              => 'GPT-4o (Balanced)',
+            'context_window'    => 128000,
+            'max_output'        => 16384,
+            'max_content_chars' => 80000,
+        ),
         'gpt-5-nano' => array(
-            'name'              => 'GPT-5 Nano',
-            'context_window'    => 400000,   // 400K total (272K input + 128K output)
-            'max_output'        => 128000,   // Model's hard max output limit
-            'max_content_chars' => 200000,   // ~57K tokens, well under 272K input limit
+            'name'              => 'GPT-5 Nano (Slow - Reasoning)',
+            'context_window'    => 400000,
+            'max_output'        => 128000,
+            'max_content_chars' => 200000,
         ),
     );
 
@@ -171,13 +183,24 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
         // We request the model's full max_output - calculate_safe_max_tokens will reduce only if needed
         $safe_max_tokens = $this->calculate_safe_max_tokens( $messages, $model_config['max_output'], $model );
 
-        // Build request body (OpenAI uses max_completion_tokens instead of max_tokens)
-        // Note: gpt-5-nano doesn't support custom temperature, only default (1)
+        // Build request body for Responses API
+        // Responses API uses 'input' instead of 'messages'
+        // and 'max_output_tokens' instead of 'max_completion_tokens'
         $body = array(
-            'model'                 => $model,
-            'messages'              => $messages,
-            'max_completion_tokens' => $safe_max_tokens,
+            'model'             => $model,
+            'input'             => $messages,
+            'max_output_tokens' => $safe_max_tokens,
         );
+
+        // For GPT-5 models with reasoning capability, set minimal reasoning for speed
+        // Responses API uses nested reasoning object with effort parameter
+        // This dramatically reduces latency from 100+ seconds to ~10-20 seconds
+        // Options: minimal, low, medium (default), high
+        if ( strpos( $model, 'gpt-5' ) !== false ) {
+            $body['reasoning'] = array( 'effort' => 'minimal' );
+            // Also use low verbosity for faster, more concise responses
+            $body['text'] = array( 'verbosity' => 'low' );
+        }
 
         // Make request
         $response = $this->make_request(
@@ -253,12 +276,20 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
         // Calculate safe max_tokens
         $safe_max_tokens = $this->calculate_safe_max_tokens( $messages, $model_config['max_output'], $model );
 
-        // Build request body
+        // Build request body for Responses API
         $body = array(
-            'model'                 => $model,
-            'messages'              => $messages,
-            'max_completion_tokens' => $safe_max_tokens,
+            'model'             => $model,
+            'input'             => $messages,
+            'max_output_tokens' => $safe_max_tokens,
         );
+
+        // For GPT-5 models, set minimal reasoning for speed
+        // Responses API uses nested reasoning object
+        // Options: minimal, low, medium (default), high
+        if ( strpos( $model, 'gpt-5' ) !== false ) {
+            $body['reasoning'] = array( 'effort' => 'minimal' );
+            $body['text'] = array( 'verbosity' => 'low' );
+        }
 
         WP_AI_Schema_Generator::log( 'Starting content analysis (Pass 1) with OpenAI' );
 
@@ -319,6 +350,7 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
         $decoded = json_decode( $body, true );
 
         if ( json_last_error() !== JSON_ERROR_NONE ) {
+            WP_AI_Schema_Generator::log( 'JSON decode error: ' . json_last_error_msg(), 'error' );
             return array(
                 'success'     => false,
                 'analysis'    => '',
@@ -329,9 +361,13 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
         }
 
         // Extract content from response
-        $content = $decoded['choices'][0]['message']['content'] ?? '';
+        // Responses API uses: output[0].message.content
+        // Chat Completions API uses: choices[0].message.content
+        $content = $decoded['output'][0]['message']['content'] ?? 
+                   $decoded['choices'][0]['message']['content'] ?? '';
 
         if ( empty( $content ) ) {
+            WP_AI_Schema_Generator::log( 'Response structure: ' . wp_json_encode( array_keys( $decoded ) ), 'error' );
             return array(
                 'success'     => false,
                 'analysis'    => '',
@@ -370,17 +406,17 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
         }
 
         // Make a minimal request to test the connection
-        // Note: gpt-5-nano is a reasoning model - it needs enough tokens for both
-        // internal reasoning AND output. 500 tokens allows ~64 reasoning + output.
+        // Note: For Responses API, max_output_tokens limits only visible output
+        // (reasoning tokens are not counted toward this limit)
         $body = array(
-            'model'                 => $settings['openai_model'] ?? self::DEFAULT_MODEL,
-            'messages'              => array(
+            'model'             => $settings['openai_model'] ?? self::DEFAULT_MODEL,
+            'input'             => array(
                 array(
                     'role'    => 'user',
                     'content' => 'Say "OK" and nothing else.',
                 ),
             ),
-            'max_completion_tokens' => 500,
+            'max_output_tokens' => 500,
         );
 
         $response = $this->make_request(
@@ -450,7 +486,7 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
      * @param array $payload Prompt payload.
      * @return array Messages array.
      */
-    private function build_messages( array $payload ): array {
+    public function build_messages( array $payload ): array {
         // Check if this is a two-pass generation from analyzed content
         $is_from_analysis = ! empty( $payload['isFromAnalysis'] );
 
@@ -663,6 +699,7 @@ BUSINESS DATA (use this verified information for Organization/LocalBusiness sche
         $decoded = json_decode( $body, true );
 
         if ( json_last_error() !== JSON_ERROR_NONE ) {
+            WP_AI_Schema_Generator::log( 'JSON decode error: ' . json_last_error_msg(), 'error' );
             return array(
                 'success'     => false,
                 'schema'      => '',
@@ -673,9 +710,13 @@ BUSINESS DATA (use this verified information for Organization/LocalBusiness sche
         }
 
         // Extract content from response
-        $content = $decoded['choices'][0]['message']['content'] ?? '';
+        // Responses API uses: output[0].message.content
+        // Chat Completions API uses: choices[0].message.content
+        $content = $decoded['output'][0]['message']['content'] ?? 
+                   $decoded['choices'][0]['message']['content'] ?? '';
 
         if ( empty( $content ) ) {
+            WP_AI_Schema_Generator::log( 'Response structure: ' . wp_json_encode( array_keys( $decoded ) ), 'error' );
             return array(
                 'success'     => false,
                 'schema'      => '',

@@ -322,6 +322,8 @@ class WP_AI_Schema_Metabox {
             'wpAiSchemaMetabox',
             array(
                 'ajax_url'    => admin_url( 'admin-ajax.php' ),
+                'rest_url'    => esc_url_raw( rest_url() ),
+                'rest_nonce'  => wp_create_nonce( 'wp_rest' ),
                 'nonce'       => wp_create_nonce( 'wp_ai_schema_generate_' . $post->ID ),
                 'post_id'     => $post->ID,
                 'post_url'    => get_permalink( $post->ID ),
@@ -349,6 +351,12 @@ class WP_AI_Schema_Metabox {
                     'deep_analysis_pass1'  => __( 'Pass 1: Analyzing content...', 'wp-ai-seo-schema-generator' ),
                     'deep_analysis_pass2'  => __( 'Pass 2: Generating schema...', 'wp-ai-seo-schema-generator' ),
                     'deep_analysis_success' => __( 'Schema generated with deep analysis!', 'wp-ai-seo-schema-generator' ),
+                    // Streaming progress strings
+                    'stream_connecting'    => __( 'Connecting...', 'wp-ai-seo-schema-generator' ),
+                    'stream_fetching'      => __( 'Fetching page...', 'wp-ai-seo-schema-generator' ),
+                    'stream_analyzing'     => __( 'AI analyzing...', 'wp-ai-seo-schema-generator' ),
+                    'stream_generating'    => __( 'Generating schema...', 'wp-ai-seo-schema-generator' ),
+                    'stream_success'       => __( 'Schema generated with real-time streaming!', 'wp-ai-seo-schema-generator' ),
                     // Diagnostic strings
                     'running_diagnostics'  => __( 'Running diagnostics...', 'wp-ai-seo-schema-generator' ),
                     'run_diagnostics'      => __( 'Run Diagnostics', 'wp-ai-seo-schema-generator' ),
