@@ -425,8 +425,11 @@ class WP_AI_Schema_Streaming_Handler {
 
             // For GPT-5 models with reasoning capability, set minimal reasoning for speed
             // This dramatically reduces latency from 100+ seconds to ~10-20 seconds
+            // GPT-5 supports: minimal, low, medium (default), high
             if ( strpos( $model, 'gpt-5' ) !== false ) {
-                $body['reasoning_effort'] = 'minimal';
+                $body['reasoning'] = array( 'effort' => 'minimal' );
+                // Also set low verbosity for faster, more concise responses
+                $body['text'] = array( 'verbosity' => 'low' );
             }
         } else {
             // DeepSeek: use max_tokens and temperature
