@@ -44,7 +44,7 @@ class WP_AI_Schema_Ajax {
     /**
      * Schema validator
      *
-     * @var WP_AI_Schema_Schema_Validator
+     * @var WP_AI_Schema_Validator
      */
     private $schema_validator;
 
@@ -61,14 +61,14 @@ class WP_AI_Schema_Ajax {
      * @param WP_AI_Schema_Content_Processor $content_processor Content processor.
      * @param WP_AI_Schema_Prompt_Builder    $prompt_builder    Prompt builder.
      * @param WP_AI_Schema_Provider_Registry $provider_registry Provider registry.
-     * @param WP_AI_Schema_Schema_Validator  $schema_validator  Schema validator.
+     * @param WP_AI_Schema_Validator  $schema_validator  Schema validator.
      * @param WP_AI_Schema_Encryption        $encryption        Encryption handler.
      */
     public function __construct(
         WP_AI_Schema_Content_Processor $content_processor,
         WP_AI_Schema_Prompt_Builder $prompt_builder,
         WP_AI_Schema_Provider_Registry $provider_registry,
-        WP_AI_Schema_Schema_Validator $schema_validator,
+        WP_AI_Schema_Validator $schema_validator,
         WP_AI_Schema_Encryption $encryption
     ) {
         $this->content_processor = $content_processor;

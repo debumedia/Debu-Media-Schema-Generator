@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Schema.org type definitions and property references
  */
-class WP_AI_Schema_Schema_Reference {
+class WP_AI_Schema_Reference {
 
     /**
      * Get all schema definitions

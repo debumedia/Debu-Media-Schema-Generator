@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Handles frontend output of JSON-LD schema
  */
-class WP_AI_Schema_Schema_Output {
+class WP_AI_Schema_Output {
 
     /**
      * Conflict detector

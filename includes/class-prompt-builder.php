@@ -63,14 +63,14 @@ class WP_AI_Schema_Prompt_Builder {
      * @return string Formatted schema reference.
      */
     private function build_schema_reference( string $type_hint ): string {
-        if ( ! class_exists( 'WP_AI_Schema_Schema_Reference' ) ) {
+        if ( ! class_exists( 'WP_AI_Schema_Reference' ) ) {
             return '';
         }
 
-        $relevant_types = WP_AI_Schema_Schema_Reference::get_relevant_types( $type_hint );
-        $definitions    = WP_AI_Schema_Schema_Reference::get_definitions_for_types( $relevant_types );
+        $relevant_types = WP_AI_Schema_Reference::get_relevant_types( $type_hint );
+        $definitions    = WP_AI_Schema_Reference::get_definitions_for_types( $relevant_types );
 
-        return WP_AI_Schema_Schema_Reference::format_for_prompt( $definitions );
+        return WP_AI_Schema_Reference::format_for_prompt( $definitions );
     }
 
     /**

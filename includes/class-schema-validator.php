@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Validates and sanitizes JSON-LD schema output
  */
-class WP_AI_Schema_Schema_Validator {
+class WP_AI_Schema_Validator {
 
     /**
      * Maximum schema size in bytes (50 KB)
