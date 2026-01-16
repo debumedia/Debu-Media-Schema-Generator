@@ -254,16 +254,16 @@ class WP_AI_Schema_Metabox {
 
         wp_enqueue_style(
             'ai-jsonld-metabox',
-            WP_AI_Schema_PLUGIN_URL . 'assets/css/metabox.css',
+            WP_AI_SCHEMA_PLUGIN_URL . 'assets/css/metabox.css',
             array(),
-            WP_AI_Schema_VERSION
+            WP_AI_SCHEMA_VERSION
         );
 
         wp_enqueue_script(
             'ai-jsonld-metabox',
-            WP_AI_Schema_PLUGIN_URL . 'assets/js/metabox.js',
+            WP_AI_SCHEMA_PLUGIN_URL . 'assets/js/metabox.js',
             array( 'jquery' ),
-            WP_AI_Schema_VERSION,
+            WP_AI_SCHEMA_VERSION,
             true
         );
 
