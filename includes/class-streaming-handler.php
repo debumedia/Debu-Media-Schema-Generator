@@ -415,10 +415,16 @@ class WP_AI_Schema_Streaming_Handler {
         $body = array(
             'model'       => $model,
             'messages'    => $messages,
-            'max_tokens'  => $max_tokens,
             'stream'      => true,
             'temperature' => 0.3,
         );
+
+        // OpenAI uses max_completion_tokens, DeepSeek uses max_tokens
+        if ( 'openai' === $provider_slug ) {
+            $body['max_completion_tokens'] = $max_tokens;
+        } else {
+            $body['max_tokens'] = $max_tokens;
+        }
 
         WP_AI_Schema_Generator::log( "Streaming request to {$endpoint} with model {$model}, max_tokens: {$max_tokens}" );
 
