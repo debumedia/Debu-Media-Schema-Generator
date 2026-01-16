@@ -3,7 +3,7 @@
  * Plugin Name: WP AI SEO Schema Generator
  * Plugin URI: https://debumedia.com/wp-ai-seo-schema-generator
  * Description: Automatically generates schema.org JSON-LD structured data for WordPress pages using AI (DeepSeek, OpenAI).
- * Version: 1.7.6
+ * Version: 1.7.7
  * Author: Debu Media
  * Author URI: https://debumedia.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Plugin constants
-define( 'WP_AI_SCHEMA_VERSION', '1.7.6' );
+define( 'WP_AI_SCHEMA_VERSION', '1.7.7' );
 define( 'WP_AI_SCHEMA_PLUGIN_FILE', __FILE__ );
 define( 'WP_AI_SCHEMA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WP_AI_SCHEMA_PLUGIN_URL', plugin_dir_url( __FILE__ ) );

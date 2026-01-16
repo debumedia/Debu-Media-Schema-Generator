@@ -290,12 +290,11 @@ class WP_AI_Schema_Streaming_Handler {
             'payload_built'        => ! empty( $schema_payload ),
         ) );
 
-        // Force flush to ensure event is sent
-        if ( function_exists( 'fastcgi_finish_request' ) ) {
-            fastcgi_finish_request();
-        } else {
-            flush();
+        // Flush output buffer to ensure checkpoint 3 is sent
+        if ( ob_get_level() > 0 ) {
+            ob_flush();
         }
+        flush();
 
         // Debug checkpoint 4 - check PHP limits
         $memory_used_mb = round( memory_get_usage() / 1024 / 1024, 2 );
