@@ -350,6 +350,7 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
         $decoded = json_decode( $body, true );
 
         if ( json_last_error() !== JSON_ERROR_NONE ) {
+            WP_AI_Schema_Generator::log( 'JSON decode error: ' . json_last_error_msg(), 'error' );
             return array(
                 'success'     => false,
                 'analysis'    => '',
@@ -360,9 +361,13 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
         }
 
         // Extract content from response
-        $content = $decoded['choices'][0]['message']['content'] ?? '';
+        // Responses API uses: output[0].message.content
+        // Chat Completions API uses: choices[0].message.content
+        $content = $decoded['output'][0]['message']['content'] ?? 
+                   $decoded['choices'][0]['message']['content'] ?? '';
 
         if ( empty( $content ) ) {
+            WP_AI_Schema_Generator::log( 'Response structure: ' . wp_json_encode( array_keys( $decoded ) ), 'error' );
             return array(
                 'success'     => false,
                 'analysis'    => '',
@@ -694,6 +699,7 @@ BUSINESS DATA (use this verified information for Organization/LocalBusiness sche
         $decoded = json_decode( $body, true );
 
         if ( json_last_error() !== JSON_ERROR_NONE ) {
+            WP_AI_Schema_Generator::log( 'JSON decode error: ' . json_last_error_msg(), 'error' );
             return array(
                 'success'     => false,
                 'schema'      => '',
@@ -704,9 +710,13 @@ BUSINESS DATA (use this verified information for Organization/LocalBusiness sche
         }
 
         // Extract content from response
-        $content = $decoded['choices'][0]['message']['content'] ?? '';
+        // Responses API uses: output[0].message.content
+        // Chat Completions API uses: choices[0].message.content
+        $content = $decoded['output'][0]['message']['content'] ?? 
+                   $decoded['choices'][0]['message']['content'] ?? '';
 
         if ( empty( $content ) ) {
+            WP_AI_Schema_Generator::log( 'Response structure: ' . wp_json_encode( array_keys( $decoded ) ), 'error' );
             return array(
                 'success'     => false,
                 'schema'      => '',

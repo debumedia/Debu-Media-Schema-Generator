@@ -676,16 +676,22 @@ class WP_AI_Schema_Streaming_Handler {
 
                 $json = json_decode( $json_str, true );
 
-                if ( $json && isset( $json['choices'][0]['delta']['content'] ) ) {
-                    $content = $json['choices'][0]['delta']['content'];
-                    $this->accumulated_content .= $content;
+                if ( $json ) {
+                    // Responses API uses: output[0].delta.content
+                    // Chat Completions API uses: choices[0].delta.content
+                    $content = $json['output'][0]['delta']['content'] ?? 
+                               $json['choices'][0]['delta']['content'] ?? null;
 
-                    // Send content event
-                    $this->send_sse_event( 'content', array(
-                        'phase' => $phase,
-                        'chunk' => $content,
-                        'total' => strlen( $this->accumulated_content ),
-                    ) );
+                    if ( $content !== null ) {
+                        $this->accumulated_content .= $content;
+
+                        // Send content event
+                        $this->send_sse_event( 'content', array(
+                            'phase' => $phase,
+                            'chunk' => $content,
+                            'total' => strlen( $this->accumulated_content ),
+                        ) );
+                    }
                 }
             }
         }
