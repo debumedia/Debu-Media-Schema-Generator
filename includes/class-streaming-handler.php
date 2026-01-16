@@ -249,8 +249,11 @@ class WP_AI_Schema_Streaming_Handler {
         }
 
         // Parse analysis result
+        WP_AI_Schema_Generator::log( 'Analysis request completed, content length: ' . strlen( $analysis_result['content'] ?? '' ) );
+        
         $analysis_data = $this->parse_analysis_json( $analysis_result['content'] );
         if ( ! $analysis_data ) {
+            WP_AI_Schema_Generator::log( 'Failed to parse analysis data', 'error' );
             $this->send_sse_event( 'error', array(
                 'message' => 'Failed to parse content analysis',
             ) );
@@ -677,6 +680,17 @@ class WP_AI_Schema_Streaming_Handler {
                 $json = json_decode( $json_str, true );
 
                 if ( $json ) {
+                    // Log first chunk to see structure
+                    if ( empty( $this->accumulated_content ) ) {
+                        WP_AI_Schema_Generator::log( 'First streaming chunk structure: ' . wp_json_encode( array_keys( $json ) ) );
+                        if ( isset( $json['output'][0] ) ) {
+                            WP_AI_Schema_Generator::log( 'output[0] keys: ' . wp_json_encode( array_keys( $json['output'][0] ) ) );
+                        }
+                        if ( isset( $json['choices'][0] ) ) {
+                            WP_AI_Schema_Generator::log( 'choices[0] keys: ' . wp_json_encode( array_keys( $json['choices'][0] ) ) );
+                        }
+                    }
+
                     // Responses API uses: output[0].delta.content
                     // Chat Completions API uses: choices[0].delta.content
                     $content = $json['output'][0]['delta']['content'] ?? 
@@ -753,16 +767,24 @@ class WP_AI_Schema_Streaming_Handler {
         // Try to extract JSON from response
         $content = trim( $content );
 
+        WP_AI_Schema_Generator::log( 'Parsing analysis response, length: ' . strlen( $content ) . ' chars' );
+        WP_AI_Schema_Generator::log( 'First 500 chars: ' . substr( $content, 0, 500 ) );
+
         // Remove markdown code fences if present
         if ( preg_match( '/```(?:json)?\s*([\s\S]*?)```/i', $content, $matches ) ) {
             $content = trim( $matches[1] );
+            WP_AI_Schema_Generator::log( 'Extracted from code fence' );
         }
 
         $data = json_decode( $content, true );
 
         if ( json_last_error() === JSON_ERROR_NONE && is_array( $data ) ) {
+            WP_AI_Schema_Generator::log( 'Successfully parsed analysis JSON' );
             return $data;
         }
+
+        WP_AI_Schema_Generator::log( 'Failed to parse analysis JSON: ' . json_last_error_msg(), 'error' );
+        WP_AI_Schema_Generator::log( 'Raw content: ' . $content, 'error' );
 
         return null;
     }
