@@ -290,15 +290,48 @@ class WP_AI_Schema_Streaming_Handler {
             'payload_built'        => ! empty( $schema_payload ),
         ) );
 
-        // Stream the schema generation
-        $schema_result = $this->stream_provider_request(
-            $provider,
-            $api_key,
-            $settings,
-            $schema_payload,
-            'pass2',
-            false // is not analysis
-        );
+        // Debug checkpoint 4
+        $this->send_sse_event( 'debug', array( 
+            'checkpoint' => 'RIGHT BEFORE stream_provider_request call for pass2',
+            'has_provider' => isset( $provider ),
+            'has_api_key' => ! empty( $api_key ),
+            'has_settings' => ! empty( $settings ),
+            'has_payload' => ! empty( $schema_payload ),
+        ) );
+
+        // Stream the schema generation - wrap in error handling
+        try {
+            $schema_result = $this->stream_provider_request(
+                $provider,
+                $api_key,
+                $settings,
+                $schema_payload,
+                'pass2',
+                false // is not analysis
+            );
+        } catch ( Exception $e ) {
+            $this->send_sse_event( 'debug', array(
+                'fatal_error' => 'Exception in stream_provider_request',
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ) );
+            $this->send_sse_event( 'error', array(
+                'message' => 'Fatal error: ' . $e->getMessage(),
+            ) );
+            return;
+        } catch ( Error $e ) {
+            $this->send_sse_event( 'debug', array(
+                'fatal_error' => 'PHP Error in stream_provider_request',
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ) );
+            $this->send_sse_event( 'error', array(
+                'message' => 'Fatal PHP error: ' . $e->getMessage(),
+            ) );
+            return;
+        }
 
         if ( ! $schema_result['success'] ) {
             $this->send_sse_event( 'error', array(
