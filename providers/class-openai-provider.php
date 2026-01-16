@@ -191,13 +191,8 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
             'max_completion_tokens' => $safe_max_tokens,
         );
 
-        // For GPT-5 models with reasoning capability, set minimal reasoning for speed
-        // This dramatically reduces latency from 100+ seconds to ~10-20 seconds
-        // GPT-5 supports: minimal, low, medium (default), high
-        if ( strpos( $model, 'gpt-5' ) !== false ) {
-            $body['reasoning'] = array( 'effort' => 'minimal' );
-            $body['text'] = array( 'verbosity' => 'low' );
-        }
+        // Note: reasoning.effort only works with Responses API, not Chat Completions
+        // For now, GPT-5 models will use their default reasoning behavior
 
         // Make request
         $response = $this->make_request(
@@ -280,12 +275,7 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
             'max_completion_tokens' => $safe_max_tokens,
         );
 
-        // For GPT-5 models, set minimal reasoning for speed
-        // GPT-5 supports: minimal, low, medium (default), high
-        if ( strpos( $model, 'gpt-5' ) !== false ) {
-            $body['reasoning'] = array( 'effort' => 'minimal' );
-            $body['text'] = array( 'verbosity' => 'low' );
-        }
+        // Note: reasoning.effort only works with Responses API, not Chat Completions
 
         WP_AI_Schema_Generator::log( 'Starting content analysis (Pass 1) with OpenAI' );
 

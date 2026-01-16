@@ -423,14 +423,10 @@ class WP_AI_Schema_Streaming_Handler {
             // OpenAI: use max_completion_tokens, skip temperature (some models don't support it)
             $body['max_completion_tokens'] = $max_tokens;
 
-            // For GPT-5 models with reasoning capability, set minimal reasoning for speed
-            // This dramatically reduces latency from 100+ seconds to ~10-20 seconds
-            // GPT-5 supports: minimal, low, medium (default), high
-            if ( strpos( $model, 'gpt-5' ) !== false ) {
-                $body['reasoning'] = array( 'effort' => 'minimal' );
-                // Also set low verbosity for faster, more concise responses
-                $body['text'] = array( 'verbosity' => 'low' );
-            }
+            // Note: reasoning.effort and text.verbosity parameters only work with
+            // the Responses API (/v1/responses), not Chat Completions (/v1/chat/completions)
+            // TODO: Consider migrating to Responses API for GPT-5 models to enable
+            // reasoning control and reduce latency
         } else {
             // DeepSeek: use max_tokens and temperature
             $body['max_tokens'] = $max_tokens;
