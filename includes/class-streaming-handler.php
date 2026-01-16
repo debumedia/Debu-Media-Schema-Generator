@@ -390,6 +390,12 @@ class WP_AI_Schema_Streaming_Handler {
         $model_key     = $provider_slug . '_model';
         $model         = $settings[ $model_key ] ?? '';
 
+        // Fallback to default model if not set
+        if ( empty( $model ) ) {
+            $model = 'deepseek' === $provider_slug ? 'deepseek-chat' : 'gpt-4o-mini';
+            WP_AI_Schema_Generator::log( "Model not set, using default: {$model}" );
+        }
+
         // Get API endpoint
         $endpoint = $this->get_provider_endpoint( $provider_slug );
 
@@ -398,13 +404,23 @@ class WP_AI_Schema_Streaming_Handler {
             ? $this->build_analysis_messages( $provider, $payload )
             : $this->build_schema_messages( $provider, $payload );
 
+        // Get max tokens from provider
+        $max_tokens = 8000;
+        if ( method_exists( $provider, 'get_model_config' ) ) {
+            $config = $provider->get_model_config( $model );
+            $max_tokens = $config['max_output'] ?? 8000;
+        }
+
         // Build request body with streaming enabled
         $body = array(
             'model'       => $model,
             'messages'    => $messages,
+            'max_tokens'  => $max_tokens,
             'stream'      => true,
             'temperature' => 0.3,
         );
+
+        WP_AI_Schema_Generator::log( "Streaming request to {$endpoint} with model {$model}, max_tokens: {$max_tokens}" );
 
         // Make streaming request
         return $this->make_streaming_request( $endpoint, $api_key, $body, $phase );
@@ -472,6 +488,13 @@ class WP_AI_Schema_Streaming_Handler {
     }
 
     /**
+     * Error response body captured during streaming
+     *
+     * @var string
+     */
+    private $error_response = '';
+
+    /**
      * Make a streaming HTTP request and forward events
      *
      * @param string $endpoint API endpoint.
@@ -481,10 +504,10 @@ class WP_AI_Schema_Streaming_Handler {
      * @return array Result with success, content, error.
      */
     private function make_streaming_request( string $endpoint, string $api_key, array $body, string $phase ): array {
-        $headers = array(
-            'Content-Type'  => 'application/json',
-            'Authorization' => 'Bearer ' . $api_key,
-        );
+        // Reset state
+        $this->stream_buffer = '';
+        $this->accumulated_content = '';
+        $this->error_response = '';
 
         // Use cURL for streaming support
         $ch = curl_init( $endpoint );
@@ -499,13 +522,15 @@ class WP_AI_Schema_Streaming_Handler {
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_TIMEOUT        => 300,
             CURLOPT_WRITEFUNCTION  => function( $ch, $data ) use ( $phase ) {
+                // Check HTTP code - if error, capture response for debugging
+                $http_code = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+                if ( $http_code >= 400 ) {
+                    $this->error_response .= $data;
+                    return strlen( $data );
+                }
                 return $this->process_stream_chunk( $data, $phase );
             },
         ) );
-
-        $full_content = '';
-        $this->stream_buffer = '';
-        $this->accumulated_content = '';
 
         curl_exec( $ch );
 
@@ -515,6 +540,7 @@ class WP_AI_Schema_Streaming_Handler {
         curl_close( $ch );
 
         if ( $error ) {
+            WP_AI_Schema_Generator::log( "cURL error: {$error}", 'error' );
             return array(
                 'success' => false,
                 'content' => null,
@@ -523,10 +549,24 @@ class WP_AI_Schema_Streaming_Handler {
         }
 
         if ( $http_code >= 400 ) {
+            // Try to parse error response for more details
+            $error_detail = $this->error_response;
+            $error_json = json_decode( $error_detail, true );
+
+            if ( $error_json && isset( $error_json['error']['message'] ) ) {
+                $error_msg = $error_json['error']['message'];
+            } elseif ( $error_json && isset( $error_json['message'] ) ) {
+                $error_msg = $error_json['message'];
+            } else {
+                $error_msg = "HTTP {$http_code}";
+            }
+
+            WP_AI_Schema_Generator::log( "API error {$http_code}: {$error_detail}", 'error' );
+
             return array(
                 'success' => false,
                 'content' => null,
-                'error'   => "HTTP error: {$http_code}",
+                'error'   => $error_msg,
             );
         }
 
