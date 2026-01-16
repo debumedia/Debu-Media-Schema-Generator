@@ -68,4 +68,24 @@ interface WP_AI_Schema_Provider_Interface {
      * @return array Array of settings field definitions.
      */
     public function get_settings_fields(): array;
+
+    /**
+     * Analyze content for two-pass schema generation
+     *
+     * First pass: Classifies and structures page content into organized sections
+     * (services, testimonials, FAQs, team members, etc.)
+     *
+     * @param array $payload  The analysis payload containing page and site data.
+     * @param array $settings Plugin settings including API keys and model config.
+     * @return array {
+     *     Response array.
+     *
+     *     @type bool   $success     Whether the request was successful.
+     *     @type string $analysis    The structured analysis JSON string (on success).
+     *     @type int    $status_code HTTP status code.
+     *     @type string $error       Error message (on failure).
+     *     @type array  $headers     Response headers.
+     * }
+     */
+    public function analyze_content( array $payload, array $settings ): array;
 }

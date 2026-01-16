@@ -203,6 +203,155 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
     }
 
     /**
+     * Analyze content for two-pass schema generation
+     *
+     * First pass: Classifies and structures page content into organized sections.
+     *
+     * @param array $payload  Analysis payload with page and site data.
+     * @param array $settings Plugin settings.
+     * @return array Response array with 'success', 'analysis', 'status_code', 'error', 'headers'.
+     */
+    public function analyze_content( array $payload, array $settings ): array {
+        // Check rate limit
+        $rate_limited = $this->is_rate_limited();
+        if ( false !== $rate_limited ) {
+            return array(
+                'success'     => false,
+                'analysis'    => '',
+                'status_code' => 429,
+                'error'       => sprintf(
+                    /* translators: %d: seconds until rate limit expires */
+                    __( 'Rate limited. Please try again in %d seconds.', 'wp-ai-seo-schema-generator' ),
+                    $rate_limited - time()
+                ),
+                'headers'     => array(),
+            );
+        }
+
+        // Get API key
+        $api_key = $this->get_api_key( $settings, 'deepseek_api_key' );
+
+        if ( empty( $api_key ) ) {
+            return array(
+                'success'     => false,
+                'analysis'    => '',
+                'status_code' => 0,
+                'error'       => __( 'DeepSeek API key is not configured.', 'wp-ai-seo-schema-generator' ),
+                'headers'     => array(),
+            );
+        }
+
+        // Get model
+        $model        = $settings['deepseek_model'] ?? self::DEFAULT_MODEL;
+        $model_config = $this->get_model_config( $model );
+
+        // Build analysis messages
+        $messages = $this->build_analysis_messages( $payload );
+
+        // Calculate safe max_tokens
+        $safe_max_tokens = $this->calculate_safe_max_tokens( $messages, $model_config['max_output'], $model );
+
+        // Build request body
+        $body = array(
+            'model'       => $model,
+            'messages'    => $messages,
+            'temperature' => floatval( $settings['temperature'] ?? 0.2 ),
+            'max_tokens'  => $safe_max_tokens,
+        );
+
+        WP_AI_Schema_Generator::log( 'Starting content analysis (Pass 1) with DeepSeek' );
+
+        // Make request
+        $response = $this->make_request(
+            self::API_ENDPOINT,
+            array(
+                'Content-Type'  => 'application/json',
+                'Authorization' => 'Bearer ' . $api_key,
+            ),
+            $body,
+            120
+        );
+
+        if ( ! $response['success'] ) {
+            return array(
+                'success'     => false,
+                'analysis'    => '',
+                'status_code' => $response['status_code'],
+                'error'       => $response['error'],
+                'headers'     => $response['headers'],
+            );
+        }
+
+        // Parse response
+        return $this->parse_analysis_response( $response['body'] );
+    }
+
+    /**
+     * Build messages array for content analysis request
+     *
+     * @param array $payload Analysis payload.
+     * @return array Messages array.
+     */
+    private function build_analysis_messages( array $payload ): array {
+        $system_prompt = WP_AI_Schema_Content_Analyzer::get_analysis_system_prompt();
+        $user_message  = WP_AI_Schema_Content_Analyzer::get_analysis_user_prompt( $payload );
+
+        return array(
+            array(
+                'role'    => 'system',
+                'content' => $system_prompt,
+            ),
+            array(
+                'role'    => 'user',
+                'content' => $user_message,
+            ),
+        );
+    }
+
+    /**
+     * Parse content analysis API response
+     *
+     * @param string $body Response body.
+     * @return array Parsed response.
+     */
+    private function parse_analysis_response( string $body ): array {
+        $decoded = json_decode( $body, true );
+
+        if ( json_last_error() !== JSON_ERROR_NONE ) {
+            return array(
+                'success'     => false,
+                'analysis'    => '',
+                'status_code' => 200,
+                'error'       => __( 'Failed to parse API response.', 'wp-ai-seo-schema-generator' ),
+                'headers'     => array(),
+            );
+        }
+
+        // Extract content from response
+        $content = $decoded['choices'][0]['message']['content'] ?? '';
+
+        if ( empty( $content ) ) {
+            return array(
+                'success'     => false,
+                'analysis'    => '',
+                'status_code' => 200,
+                'error'       => __( 'Empty response from API.', 'wp-ai-seo-schema-generator' ),
+                'headers'     => array(),
+            );
+        }
+
+        WP_AI_Schema_Generator::log( 'Content analysis (Pass 1) completed successfully' );
+
+        return array(
+            'success'     => true,
+            'analysis'    => $content,
+            'status_code' => 200,
+            'error'       => null,
+            'headers'     => array(),
+        );
+    }
+
+    /**
      * Test API connection
      *
      * @param array $settings Plugin settings.
@@ -286,9 +435,21 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
      * @return array Messages array.
      */
     private function build_messages( array $payload ): array {
-        $schema_reference = $payload['schemaReference'] ?? '';
-        $system_prompt    = $this->get_system_prompt( $schema_reference );
-        $user_message     = $this->build_user_message( $payload );
+        // Check if this is a two-pass generation from analyzed content
+        $is_from_analysis = ! empty( $payload['isFromAnalysis'] );
+
+        if ( $is_from_analysis ) {
+            // Use special prompts for generating schema from pre-analyzed content
+            $system_prompt = WP_AI_Schema_Prompt_Builder::get_schema_from_analysis_system_prompt();
+            $user_message  = WP_AI_Schema_Prompt_Builder::get_schema_from_analysis_user_prompt( $payload );
+
+            WP_AI_Schema_Generator::log( 'Pass 2: Using analyzed content prompts for schema generation' );
+        } else {
+            // Standard single-pass generation
+            $schema_reference = $payload['schemaReference'] ?? '';
+            $system_prompt    = $this->get_system_prompt( $schema_reference );
+            $user_message     = $this->build_user_message( $payload );
+        }
 
         return array(
             array(
@@ -330,11 +491,26 @@ The content includes special markers to help you understand the page structure:
 - **text** indicates important/emphasized text
 - Links include their URLs in parentheses: text (https://...)
 
+TESTIMONIAL/REVIEW MARKERS (IMPORTANT - create Review schemas for these):
+- [TESTIMONIAL START] / [TESTIMONIAL END] indicates a client testimonial or review
+  - "Quote:" contains the testimonial text (use as reviewBody)
+  - "Author:" contains the reviewer name (create Person object)
+  - "Rating:" contains star rating if available (use as ratingValue)
+- [QUOTE START] / [QUOTE END] indicates a general quote/testimonial
+
+FAQ MARKERS:
+- [FAQ ITEM START] / [FAQ ITEM END] indicates a FAQ question/answer pair
+  - "Question:" contains the question text
+  - "Answer:" contains the answer text
+  Create FAQPage schema with Question/Answer objects for these.
+
 Use these markers to identify:
 - Services being offered (often under headings like "Services", "What We Do")
 - Contact information (under "Contact", "Get in Touch")
 - Team members or founders (under "Team", "About Us")
 - Pricing or offers
+- TESTIMONIALS and REVIEWS (under "Testimonials", "What Our Clients Say", "Reviews", "Client Feedback")
+  IMPORTANT: Each testimonial MUST become a Review object with author and reviewBody
 - FAQs (Question/Answer patterns)
 
 OUTPUT FORMAT:
@@ -349,6 +525,8 @@ The @graph should typically include:
 - ContactPoint for contact information
 - PostalAddress if address is provided
 - FAQPage with Question/Answer if FAQ content exists
+- Review objects for EACH testimonial/review found (with author as Person, reviewBody, reviewRating)
+- AggregateRating if multiple reviews exist (calculate average)
 
 Use @id references to link related entities:
 - "@id": "#organization" on the Organization
@@ -373,6 +551,9 @@ Extract and include ALL relevant information from the content:
 - Team members or founders should become Person objects
 - Areas served or target audience should be included
 - Any pricing or offers should be captured
+- EVERY testimonial/review MUST become a Review object - do not skip any!
+  Each Review should have: @type, author (Person with name), reviewBody, reviewRating (if rating available)
+  Link reviews to the Organization/LocalBusiness using itemReviewed: {"@id": "#organization"}
 
 BUSINESS DATA PRIORITY:
 If BUSINESS DATA is provided in the input, use it as the authoritative source for:

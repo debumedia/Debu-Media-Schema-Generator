@@ -318,4 +318,226 @@ class WP_AI_Schema_Prompt_Builder {
 
         return 'auto';
     }
+
+    /**
+     * Build payload from pre-analyzed content (for two-pass generation)
+     *
+     * This method builds a payload optimized for schema generation from
+     * already-classified content data.
+     *
+     * @param int   $post_id           Post ID.
+     * @param array $analyzed_data     Data from content analyzer (Pass 1).
+     * @param array $settings          Plugin settings.
+     * @param int   $max_content_chars Maximum content characters (not really used here since data is pre-structured).
+     * @return array Prompt payload for Pass 2.
+     */
+    public function build_payload_from_analysis( int $post_id, array $analyzed_data, array $settings, int $max_content_chars = 50000 ): array {
+        $post = get_post( $post_id );
+
+        if ( ! $post ) {
+            return array();
+        }
+
+        $type_hint = $this->get_type_hint( $post_id );
+
+        return array(
+            'page'              => $this->build_page_data_minimal( $post ),
+            'site'              => $this->build_site_data(),
+            'business'          => $this->build_business_data( $settings ),
+            'analyzedContent'   => $analyzed_data,
+            'typeHint'          => $type_hint,
+            'schemaReference'   => $this->build_schema_reference( $type_hint ),
+            'isFromAnalysis'    => true,
+        );
+    }
+
+    /**
+     * Build minimal page data for analyzed content payload
+     *
+     * When using pre-analyzed content, we don't need the full content,
+     * just the metadata.
+     *
+     * @param WP_Post $post Post object.
+     * @return array Minimal page data.
+     */
+    private function build_page_data_minimal( WP_Post $post ): array {
+        $featured_image = $this->get_featured_image_data( $post->ID );
+
+        return array(
+            'title'         => get_the_title( $post->ID ),
+            'url'           => get_permalink( $post->ID ),
+            'pageType'      => $post->post_type,
+            'excerpt'       => $post->post_excerpt ?: null,
+            'author'        => get_the_author_meta( 'display_name', $post->post_author ),
+            'datePublished' => get_the_date( 'c', $post->ID ),
+            'dateModified'  => get_the_modified_date( 'c', $post->ID ),
+            'featuredImage' => $featured_image,
+        );
+    }
+
+    /**
+     * Get the system prompt for schema generation from analyzed data
+     *
+     * This prompt is used in Pass 2 when generating schema from pre-analyzed content.
+     *
+     * @return string System prompt.
+     */
+    public static function get_schema_from_analysis_system_prompt(): string {
+        return 'You are a schema.org JSON-LD generator. You will receive PRE-ANALYZED content data that has already been classified into structured sections.
+
+YOUR TASK: Convert the analyzed content into comprehensive, valid schema.org JSON-LD markup.
+
+STRICT REQUIREMENTS:
+1. Output ONLY valid JSON. No markdown, no code fences, no explanations.
+2. The output must be a single JSON object with "@context": "https://schema.org" at the root level.
+3. Use @graph format to include multiple related entities.
+4. NEVER invent information - only use what is provided in the analyzed data.
+5. Convert ALL provided data into appropriate schema types.
+
+INPUT DATA STRUCTURE:
+You will receive an "analyzedContent" object with classified sections:
+- page_type: Type of page (service_page, about_page, etc.)
+- page_summary: Brief description of page purpose
+- organization: Business/organization info
+- services: Array of services offered
+- testimonials: Array of client reviews (MUST become Review objects)
+- faqs: Array of Q&A pairs (MUST become FAQPage with Question/Answer)
+- team_members: Array of people (MUST become Person objects)
+- contact_info: Contact details
+- products: Array of products
+- events: Array of events
+- how_to_steps: Step-by-step instructions
+- social_proof: Statistics and credentials
+
+OUTPUT REQUIREMENTS:
+
+For TESTIMONIALS, create Review objects:
+{
+  "@type": "Review",
+  "author": {
+    "@type": "Person",
+    "name": "[author_name]"
+  },
+  "reviewBody": "[quote]",
+  "reviewRating": {
+    "@type": "Rating",
+    "ratingValue": [rating],
+    "bestRating": [rating_max]
+  },
+  "itemReviewed": {"@id": "#organization"}
+}
+
+For SERVICES, create Service objects:
+{
+  "@type": "Service",
+  "name": "[name]",
+  "description": "[description]",
+  "provider": {"@id": "#organization"},
+  "offers": { "@type": "Offer", "price": "[price]", "priceCurrency": "[currency]" }
+}
+
+For FAQs, create FAQPage:
+{
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "[question]",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "[answer]"
+      }
+    }
+  ]
+}
+
+For TEAM MEMBERS, create Person objects:
+{
+  "@type": "Person",
+  "name": "[name]",
+  "jobTitle": "[job_title]",
+  "description": "[description]",
+  "worksFor": {"@id": "#organization"}
+}
+
+Use @id references to link entities:
+- Organization: "@id": "#organization"
+- Main page: "@id": "#webpage"
+- Reviews link to organization via itemReviewed
+
+CRITICAL: Convert EVERY item in every array. Do not skip any testimonials, services, FAQs, or team members.
+
+Generate complete, linked JSON-LD from the analyzed data now.';
+    }
+
+    /**
+     * Build user message for schema generation from analysis
+     *
+     * @param array $payload Payload with analyzed content.
+     * @return string User message.
+     */
+    public static function get_schema_from_analysis_user_prompt( array $payload ): string {
+        $page_data       = $payload['page'] ?? array();
+        $site_data       = $payload['site'] ?? array();
+        $business_data   = $payload['business'] ?? null;
+        $analyzed_data   = $payload['analyzedContent'] ?? array();
+        $type_hint       = $payload['typeHint'] ?? 'auto';
+
+        $message = 'Generate JSON-LD schema from the following pre-analyzed content:
+
+PAGE METADATA:
+' . wp_json_encode( $page_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . '
+
+SITE INFORMATION:
+' . wp_json_encode( $site_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+
+        if ( ! empty( $business_data ) ) {
+            $message .= '
+
+VERIFIED BUSINESS DATA (use this for Organization/LocalBusiness):
+' . wp_json_encode( $business_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+        }
+
+        $message .= '
+
+ANALYZED CONTENT (pre-classified by content analyzer):
+' . wp_json_encode( $analyzed_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+
+        if ( 'auto' !== $type_hint ) {
+            $message .= '
+
+PREFERRED PRIMARY SCHEMA TYPE: ' . $type_hint;
+        }
+
+        // Summarize what was found to help guide generation
+        $found_items = array();
+        if ( ! empty( $analyzed_data['testimonials'] ) ) {
+            $found_items[] = count( $analyzed_data['testimonials'] ) . ' testimonials (MUST create Review for each)';
+        }
+        if ( ! empty( $analyzed_data['services'] ) ) {
+            $found_items[] = count( $analyzed_data['services'] ) . ' services';
+        }
+        if ( ! empty( $analyzed_data['faqs'] ) ) {
+            $found_items[] = count( $analyzed_data['faqs'] ) . ' FAQ items';
+        }
+        if ( ! empty( $analyzed_data['team_members'] ) ) {
+            $found_items[] = count( $analyzed_data['team_members'] ) . ' team members';
+        }
+        if ( ! empty( $analyzed_data['products'] ) ) {
+            $found_items[] = count( $analyzed_data['products'] ) . ' products';
+        }
+
+        if ( ! empty( $found_items ) ) {
+            $message .= '
+
+ITEMS TO INCLUDE IN SCHEMA:
+- ' . implode( "\n- ", $found_items );
+        }
+
+        $message .= '
+
+Generate complete JSON-LD schema now. Include ALL analyzed items.';
+
+        return $message;
+    }
 }

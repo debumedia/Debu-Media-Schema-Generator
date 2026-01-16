@@ -100,6 +100,35 @@
     }
 
     /**
+     * Start two-pass progress indicator
+     */
+    function startTwoPassProgress() {
+        var $button = $('#wp_ai_schema_generate');
+        progressStep = 0;
+
+        // Clear any existing timer
+        if (progressTimer) {
+            clearTimeout(progressTimer);
+        }
+
+        // Show first step (Pass 1: Analyzing)
+        $button.text(wpAiSchemaMetabox.i18n.deep_analysis_pass1 || 'Pass 1: Analyzing content...');
+
+        // Schedule Pass 2 indicator
+        progressTimer = setTimeout(function() {
+            $button.text(wpAiSchemaMetabox.i18n.deep_analysis_pass2 || 'Pass 2: Generating schema...');
+        }, 8000); // Switch to Pass 2 after ~8 seconds
+    }
+
+    /**
+     * Progress steps for two-pass generation
+     */
+    var twoPassSteps = [
+        { text: 'deep_analysis_pass1', delay: 0 },
+        { text: 'deep_analysis_pass2', delay: 8000 }
+    ];
+
+    /**
      * Generate schema via AJAX
      */
     function generateSchema() {
@@ -112,27 +141,33 @@
         var typeHint = $('#wp_ai_schema_type_hint').val();
         var forceRegenerate = $('#wp_ai_schema_force_regenerate').is(':checked');
         var fetchFrontend = $('#wp_ai_schema_fetch_frontend').is(':checked');
+        var deepAnalysis = $('#wp_ai_schema_deep_analysis').is(':checked');
 
         // Disable button and show loading state
         $button.prop('disabled', true).addClass('generating');
         $spinner.addClass('is-active');
         $message.removeClass('success error info').addClass('hidden');
 
-        // Start progress indicator
-        startProgress();
+        // Start progress indicator (use different steps for two-pass)
+        if (deepAnalysis) {
+            startTwoPassProgress();
+        } else {
+            startProgress();
+        }
 
         // Make AJAX request
         $.ajax({
             url: wpAiSchemaMetabox.ajax_url,
             type: 'POST',
-            timeout: 150000, // 150 second timeout (2.5 minutes)
+            timeout: deepAnalysis ? 300000 : 150000, // 5 min for two-pass, 2.5 min for single pass
             data: {
                 action: 'wp_ai_schema_generate',
                 nonce: wpAiSchemaMetabox.nonce,
                 post_id: wpAiSchemaMetabox.post_id,
                 type_hint: typeHint,
                 force: forceRegenerate ? 1 : 0,
-                fetch_frontend: fetchFrontend ? 1 : 0
+                fetch_frontend: fetchFrontend ? 1 : 0,
+                deep_analysis: deepAnalysis ? 1 : 0
             },
             success: function(response) {
                 // Stop the waiting progress
@@ -152,9 +187,14 @@
                     }
 
                     // Show success message
-                    var messageText = response.data.cached
-                        ? response.data.message
-                        : wpAiSchemaMetabox.i18n.success;
+                    var messageText;
+                    if (response.data.cached) {
+                        messageText = response.data.message;
+                    } else if (response.data.two_pass) {
+                        messageText = wpAiSchemaMetabox.i18n.deep_analysis_success || 'Schema generated with deep analysis!';
+                    } else {
+                        messageText = wpAiSchemaMetabox.i18n.success;
+                    }
                     showMessage('success', messageText);
 
                     // Update status

@@ -68,7 +68,8 @@
 
 .ai-jsonld-options {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .ai-jsonld-options label {
@@ -76,6 +77,26 @@
     align-items: center;
     gap: 5px;
     cursor: pointer;
+}
+
+/* Deep analysis option styling */
+.ai-jsonld-option-deep {
+    flex-wrap: wrap;
+}
+
+.ai-jsonld-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ai-jsonld-badge-recommended {
+    background: #e0f0ff;
+    color: #0073aa;
+    border: 1px solid #a0d2ff;
 }
 
 .ai-jsonld-actions {

@@ -3,7 +3,7 @@
  * Plugin Name: WP AI SEO Schema Generator
  * Plugin URI: https://debumedia.com/wp-ai-seo-schema-generator
  * Description: Automatically generates schema.org JSON-LD structured data for WordPress pages using AI (DeepSeek, OpenAI).
- * Version: 1.5.0
+ * Version: 1.6.0
  * Author: Debu Media
  * Author URI: https://debumedia.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Plugin constants
-define( 'WP_AI_SCHEMA_VERSION', '1.5.0' );
+define( 'WP_AI_SCHEMA_VERSION', '1.6.0' );
 define( 'WP_AI_SCHEMA_PLUGIN_FILE', __FILE__ );
 define( 'WP_AI_SCHEMA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WP_AI_SCHEMA_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -70,6 +70,7 @@ final class WP_AI_Schema_Generator {
     private $encryption;
     private $provider_registry;
     private $content_processor;
+    private $content_analyzer;
     private $schema_validator;
     private $prompt_builder;
     private $conflict_detector;
@@ -106,6 +107,7 @@ final class WP_AI_Schema_Generator {
         // Core utilities
         require_once WP_AI_SCHEMA_PLUGIN_DIR . 'includes/class-encryption.php';
         require_once WP_AI_SCHEMA_PLUGIN_DIR . 'includes/class-content-processor.php';
+        require_once WP_AI_SCHEMA_PLUGIN_DIR . 'includes/class-content-analyzer.php';
         require_once WP_AI_SCHEMA_PLUGIN_DIR . 'includes/class-schema-validator.php';
         require_once WP_AI_SCHEMA_PLUGIN_DIR . 'includes/class-schema-reference.php';
         require_once WP_AI_SCHEMA_PLUGIN_DIR . 'includes/class-prompt-builder.php';
@@ -147,6 +149,12 @@ final class WP_AI_Schema_Generator {
         $this->admin   = new WP_AI_Schema_Admin( $this->encryption, $this->provider_registry );
         $this->metabox = new WP_AI_Schema_Metabox( $this->content_processor );
 
+        // Content analyzer for two-pass generation
+        $this->content_analyzer = new WP_AI_Schema_Content_Analyzer(
+            $this->provider_registry,
+            $this->content_processor
+        );
+
         // AJAX handler (orchestrates everything)
         $this->ajax = new WP_AI_Schema_Ajax(
             $this->content_processor,
@@ -155,6 +163,9 @@ final class WP_AI_Schema_Generator {
             $this->schema_validator,
             $this->encryption
         );
+
+        // Wire content analyzer into AJAX handler for two-pass support
+        $this->ajax->set_content_analyzer( $this->content_analyzer );
 
         // Frontend output
         $this->schema_output = new WP_AI_Schema_Output( $this->conflict_detector );

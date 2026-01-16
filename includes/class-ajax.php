@@ -56,6 +56,13 @@ class WP_AI_Schema_Ajax {
     private $encryption;
 
     /**
+     * Content analyzer for two-pass generation
+     *
+     * @var WP_AI_Schema_Content_Analyzer|null
+     */
+    private $content_analyzer;
+
+    /**
      * Constructor
      *
      * @param WP_AI_Schema_Content_Processor $content_processor Content processor.
@@ -78,6 +85,15 @@ class WP_AI_Schema_Ajax {
         $this->encryption        = $encryption;
 
         $this->init_hooks();
+    }
+
+    /**
+     * Set the content analyzer instance
+     *
+     * @param WP_AI_Schema_Content_Analyzer $analyzer Content analyzer.
+     */
+    public function set_content_analyzer( WP_AI_Schema_Content_Analyzer $analyzer ): void {
+        $this->content_analyzer = $analyzer;
     }
 
     /**
@@ -119,9 +135,14 @@ class WP_AI_Schema_Ajax {
         // Get flags
         $force          = ! empty( $_POST['force'] );
         $fetch_frontend = ! empty( $_POST['fetch_frontend'] );
+        $deep_analysis  = ! empty( $_POST['deep_analysis'] );
 
-        // Generate schema
-        $result = $this->generate_schema( $post_id, $force, $fetch_frontend );
+        // Generate schema (use two-pass if deep analysis enabled)
+        if ( $deep_analysis && $this->content_analyzer ) {
+            $result = $this->generate_schema_two_pass( $post_id, $force, $fetch_frontend );
+        } else {
+            $result = $this->generate_schema( $post_id, $force, $fetch_frontend );
+        }
 
         if ( $result['success'] ) {
             wp_send_json_success( $result );
@@ -310,6 +331,219 @@ class WP_AI_Schema_Ajax {
             'generated_at'  => $time,
             'detected_type' => $validation['type'],
             'message'       => __( 'Schema generated successfully!', 'wp-ai-seo-schema-generator' ),
+        );
+    }
+
+    /**
+     * Generate schema using two-pass content analysis
+     *
+     * Pass 1: Analyze content and classify into structured sections
+     * Pass 2: Generate schema from the analyzed/classified data
+     *
+     * @param int  $post_id        Post ID.
+     * @param bool $force          Force regeneration.
+     * @param bool $fetch_frontend Fetch content from frontend.
+     * @return array Result array.
+     */
+    public function generate_schema_two_pass( int $post_id, bool $force = false, bool $fetch_frontend = false ): array {
+        $settings = WP_AI_Schema_Generator::get_settings();
+
+        // Check per-post cooldown
+        $cooldown_key = 'wp_ai_schema_cooldown_' . $post_id;
+        if ( get_transient( $cooldown_key ) && ! $force ) {
+            return array(
+                'success'  => false,
+                'message'  => __( 'Please wait before regenerating.', 'wp-ai-seo-schema-generator' ),
+                'cooldown' => true,
+            );
+        }
+
+        // Check global rate limit
+        $rate_limit_until = get_transient( 'wp_ai_schema_rate_limit_until' );
+        if ( $rate_limit_until && time() < $rate_limit_until ) {
+            $wait_time = $rate_limit_until - time();
+            return array(
+                'success'      => false,
+                'message'      => sprintf(
+                    /* translators: %d: seconds to wait */
+                    __( 'Rate limited. Please try again in %d seconds.', 'wp-ai-seo-schema-generator' ),
+                    $wait_time
+                ),
+                'rate_limited' => true,
+                'wait_time'    => $wait_time,
+            );
+        }
+
+        // If fetch_frontend is requested, try to get content from the live page
+        $frontend_content = null;
+        if ( $fetch_frontend ) {
+            $post = get_post( $post_id );
+            if ( $post && 'publish' === $post->post_status ) {
+                $result = $this->content_processor->fetch_frontend_content( $post_id );
+                if ( ! is_wp_error( $result ) && ! empty( $result ) ) {
+                    $frontend_content = $result;
+                    WP_AI_Schema_Generator::log( sprintf( 'Two-pass: Fetched frontend content for post %d: %d chars', $post_id, mb_strlen( $result ) ) );
+                }
+            }
+        }
+
+        // Check if content is empty
+        if ( empty( $frontend_content ) && $this->content_processor->is_content_empty( $post_id ) ) {
+            return array(
+                'success' => false,
+                'message' => __( 'Page content is too short to generate meaningful schema.', 'wp-ai-seo-schema-generator' ),
+            );
+        }
+
+        // Check if we should regenerate (skip cache check if forced)
+        if ( ! $this->content_processor->should_regenerate( $post_id, $settings, $force ) ) {
+            $schema = get_post_meta( $post_id, '_wp_ai_schema_schema', true );
+            $hash   = get_post_meta( $post_id, '_wp_ai_schema_schema_hash', true );
+            $time   = get_post_meta( $post_id, '_wp_ai_schema_schema_last_generated', true );
+
+            return array(
+                'success'      => true,
+                'schema'       => $schema,
+                'cached'       => true,
+                'hash'         => $hash,
+                'generated_at' => intval( $time ),
+                'message'      => __( 'Using cached schema.', 'wp-ai-seo-schema-generator' ),
+            );
+        }
+
+        // Get provider
+        $provider = $this->provider_registry->get_active( $settings );
+
+        if ( ! $provider ) {
+            $this->save_error( $post_id, __( 'No provider configured.', 'wp-ai-seo-schema-generator' ) );
+            return array(
+                'success' => false,
+                'message' => __( 'No LLM provider configured.', 'wp-ai-seo-schema-generator' ),
+            );
+        }
+
+        // Check API key
+        $provider_slug = $provider->get_slug();
+        $api_key_field = $provider_slug . '_api_key';
+        $api_key       = $this->encryption->decrypt( $settings[ $api_key_field ] ?? '' );
+        if ( empty( $api_key ) ) {
+            $this->save_error( $post_id, __( 'API key not configured.', 'wp-ai-seo-schema-generator' ) );
+            return array(
+                'success' => false,
+                'message' => sprintf(
+                    /* translators: %s: provider name */
+                    __( '%s API key is not configured.', 'wp-ai-seo-schema-generator' ),
+                    $provider->get_name()
+                ),
+            );
+        }
+
+        // Set cooldown before API calls
+        set_transient( $cooldown_key, true, self::COOLDOWN_SECONDS * 2 ); // Double cooldown for two-pass
+
+        WP_AI_Schema_Generator::log( sprintf( 'Starting two-pass schema generation for post %d', $post_id ) );
+
+        // ========================
+        // PASS 1: Content Analysis
+        // ========================
+        WP_AI_Schema_Generator::log( 'Pass 1: Analyzing content...' );
+
+        $analysis_result = $this->content_analyzer->analyze( $post_id, $settings, $frontend_content );
+
+        if ( ! $analysis_result['success'] ) {
+            $this->save_error( $post_id, 'Pass 1 failed: ' . $analysis_result['error'] );
+            WP_AI_Schema_Generator::log( sprintf( 'Pass 1 failed for post %d: %s', $post_id, $analysis_result['error'] ), 'error' );
+
+            return array(
+                'success' => false,
+                'message' => __( 'Content analysis failed: ', 'wp-ai-seo-schema-generator' ) . $analysis_result['error'],
+                'pass'    => 1,
+            );
+        }
+
+        $analyzed_data = $analysis_result['data'];
+        WP_AI_Schema_Generator::log( 'Pass 1 completed. Analyzed data: ' . wp_json_encode( array_keys( $analyzed_data ) ) );
+
+        // Store analysis result for debugging (optional)
+        update_post_meta( $post_id, '_wp_ai_schema_analysis', wp_json_encode( $analyzed_data ) );
+
+        // ========================
+        // PASS 2: Schema Generation
+        // ========================
+        WP_AI_Schema_Generator::log( 'Pass 2: Generating schema from analyzed data...' );
+
+        // Get model config
+        $model_key         = $provider_slug . '_model';
+        $model             = $settings[ $model_key ] ?? '';
+        $max_content_chars = $provider->get_max_content_chars( $model );
+
+        // Build payload from analyzed data
+        $payload = $this->prompt_builder->build_payload_from_analysis( $post_id, $analyzed_data, $settings, $max_content_chars );
+
+        if ( empty( $payload ) ) {
+            $this->save_error( $post_id, __( 'Failed to build schema prompt from analysis.', 'wp-ai-seo-schema-generator' ) );
+            return array(
+                'success' => false,
+                'message' => __( 'Failed to prepare analyzed data for schema generation.', 'wp-ai-seo-schema-generator' ),
+                'pass'    => 2,
+            );
+        }
+
+        // Call provider to generate schema
+        $response = $provider->generate_schema( $payload, $settings );
+
+        if ( ! $response['success'] ) {
+            $this->save_error( $post_id, 'Pass 2 failed: ' . $response['error'] );
+            WP_AI_Schema_Generator::log( sprintf( 'Pass 2 failed for post %d: %s', $post_id, $response['error'] ), 'error' );
+
+            return array(
+                'success' => false,
+                'message' => __( 'Schema generation failed: ', 'wp-ai-seo-schema-generator' ) . $response['error'],
+                'pass'    => 2,
+            );
+        }
+
+        // Validate schema
+        $validation = $this->schema_validator->validate( $response['schema'] );
+
+        if ( ! $validation['valid'] ) {
+            $this->save_error( $post_id, $validation['error'] );
+            WP_AI_Schema_Generator::log( sprintf( 'Validation failed for post %d: %s', $post_id, $validation['error'] ), 'error' );
+
+            return array(
+                'success' => false,
+                'message' => $validation['error'],
+                'pass'    => 2,
+            );
+        }
+
+        // Save schema
+        $hash = $this->content_processor->generate_hash( $post_id, $settings );
+        $time = time();
+
+        update_post_meta( $post_id, '_wp_ai_schema_schema', $validation['schema'] );
+        update_post_meta( $post_id, '_wp_ai_schema_schema_last_generated', $time );
+        update_post_meta( $post_id, '_wp_ai_schema_schema_status', 'ok' );
+        update_post_meta( $post_id, '_wp_ai_schema_schema_hash', $hash );
+        update_post_meta( $post_id, '_wp_ai_schema_schema_error', '' );
+        update_post_meta( $post_id, '_wp_ai_schema_generation_mode', 'two_pass' );
+
+        if ( ! empty( $validation['type'] ) ) {
+            update_post_meta( $post_id, '_wp_ai_schema_detected_type', $validation['type'] );
+        }
+
+        WP_AI_Schema_Generator::log( sprintf( 'Two-pass schema generation completed for post %d', $post_id ) );
+
+        return array(
+            'success'        => true,
+            'schema'         => $validation['schema'],
+            'cached'         => false,
+            'hash'           => $hash,
+            'generated_at'   => $time,
+            'detected_type'  => $validation['type'],
+            'message'        => __( 'Schema generated successfully using deep content analysis!', 'wp-ai-seo-schema-generator' ),
+            'two_pass'       => true,
+            'analysis_keys'  => array_keys( $analyzed_data ),
         );
     }
 

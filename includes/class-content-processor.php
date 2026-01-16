@@ -108,7 +108,13 @@ class WP_AI_Schema_Content_Processor {
             $content
         );
 
-        // Step 5: Convert semantic sections
+        // Step 5: Detect and mark testimonials/reviews
+        $content = $this->detect_and_mark_testimonials( $content );
+
+        // Step 6: Detect and mark FAQ sections
+        $content = $this->detect_and_mark_faqs( $content );
+
+        // Step 7: Convert semantic sections
         $content = preg_replace( '/<section[^>]*>/i', "\n[SECTION]\n", $content );
         $content = preg_replace( '/<\/section>/i', "\n[/SECTION]\n", $content );
         $content = preg_replace( '/<article[^>]*>/i', "\n[ARTICLE]\n", $content );
@@ -122,17 +128,17 @@ class WP_AI_Schema_Content_Processor {
         $content = preg_replace( '/<header[^>]*>/i', "\n[HEADER]\n", $content );
         $content = preg_replace( '/<\/header>/i', "\n[/HEADER]\n", $content );
 
-        // Step 6: Preserve emphasis
+        // Step 8: Preserve emphasis
         $content = preg_replace( '/<(strong|b)[^>]*>(.*?)<\/\1>/is', '**$2**', $content );
         $content = preg_replace( '/<(em|i)[^>]*>(.*?)<\/\1>/is', '*$2*', $content );
 
-        // Step 7: Convert paragraphs and line breaks
+        // Step 9: Convert paragraphs and line breaks
         $content = preg_replace( '/<p[^>]*>/i', "\n", $content );
         $content = preg_replace( '/<\/p>/i', "\n", $content );
         $content = preg_replace( '/<div[^>]*>/i', "\n", $content );
         $content = preg_replace( '/<\/div>/i', "\n", $content );
 
-        // Step 8: Extract links with their URLs for context
+        // Step 10: Extract links with their URLs for context
         $content = preg_replace_callback(
             '/<a[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)<\/a>/is',
             function ( $matches ) {
@@ -151,17 +157,17 @@ class WP_AI_Schema_Content_Processor {
             $content
         );
 
-        // Step 9: Strip remaining HTML tags
+        // Step 11: Strip remaining HTML tags
         $content = wp_strip_all_tags( $content );
 
-        // Step 10: Decode HTML entities
+        // Step 12: Decode HTML entities
         $content = html_entity_decode( $content, ENT_QUOTES, 'UTF-8' );
 
-        // Step 11: Normalize whitespace (but preserve structure markers)
+        // Step 13: Normalize whitespace (but preserve structure markers)
         $content = preg_replace( '/[ \t]+/', ' ', $content );
         $content = preg_replace( '/\n{3,}/', "\n\n", $content );
 
-        // Step 12: Clean up marker formatting
+        // Step 14: Clean up marker formatting
         $content = preg_replace( '/\n +/', "\n", $content );
         $content = preg_replace( '/ +\n/', "\n", $content );
 
@@ -1056,5 +1062,375 @@ class WP_AI_Schema_Content_Processor {
             $truncated_length,
             $original_length
         );
+    }
+
+    /**
+     * Detect and mark testimonial/review sections in HTML content
+     *
+     * Looks for common testimonial patterns including:
+     * - Elements with testimonial/review-related class names
+     * - Blockquote elements (often used for quotes/testimonials)
+     * - Star rating patterns
+     * - Common page builder testimonial widgets
+     *
+     * @param string $content HTML content to process.
+     * @return string Content with testimonial markers added.
+     */
+    private function detect_and_mark_testimonials( string $content ): string {
+        // Pattern 1: Elements with testimonial/review class names
+        // Matches divs, sections, etc. with classes containing testimonial-related keywords
+        $testimonial_class_pattern = '/<([a-z0-9]+)[^>]*class=["\'][^"\']*(?:testimonial|review|client-quote|client-feedback|customer-review|customer-feedback|quote-box|quote-card|feedback-item|testimonial-item|review-item|rating-box|star-rating)[^"\']*["\'][^>]*>(.*?)<\/\1>/is';
+
+        $content = preg_replace_callback(
+            $testimonial_class_pattern,
+            function ( $matches ) {
+                $inner_content = $matches[2];
+                // Extract author name if present (common patterns)
+                $author = $this->extract_testimonial_author( $inner_content );
+                $rating = $this->extract_star_rating( $inner_content );
+                $text   = $this->extract_testimonial_text( $inner_content );
+
+                $marker = "\n[TESTIMONIAL START]\n";
+                if ( ! empty( $text ) ) {
+                    $marker .= "Quote: " . trim( $text ) . "\n";
+                }
+                if ( ! empty( $author ) ) {
+                    $marker .= "Author: " . trim( $author ) . "\n";
+                }
+                if ( ! empty( $rating ) ) {
+                    $marker .= "Rating: " . $rating . "\n";
+                }
+                $marker .= "[TESTIMONIAL END]\n";
+
+                return $marker;
+            },
+            $content
+        );
+
+        // Pattern 2: Blockquote elements (often used for testimonials)
+        $content = preg_replace_callback(
+            '/<blockquote[^>]*>(.*?)<\/blockquote>/is',
+            function ( $matches ) {
+                $inner = $matches[1];
+                $text  = wp_strip_all_tags( $inner );
+                $text  = trim( $text );
+
+                // Look for citation
+                $author = '';
+                if ( preg_match( '/<cite[^>]*>(.*?)<\/cite>/is', $inner, $cite_match ) ) {
+                    $author = wp_strip_all_tags( $cite_match[1] );
+                } elseif ( preg_match( '/<footer[^>]*>(.*?)<\/footer>/is', $inner, $footer_match ) ) {
+                    $author = wp_strip_all_tags( $footer_match[1] );
+                }
+
+                // Only mark as testimonial if it looks like one (has content)
+                if ( mb_strlen( $text ) > 20 ) {
+                    $marker = "\n[QUOTE START]\n";
+                    $marker .= "Text: " . $text . "\n";
+                    if ( ! empty( $author ) ) {
+                        $marker .= "Attribution: " . trim( $author ) . "\n";
+                    }
+                    $marker .= "[QUOTE END]\n";
+                    return $marker;
+                }
+
+                return $matches[0];
+            },
+            $content
+        );
+
+        // Pattern 3: Elementor testimonial widgets
+        $content = preg_replace_callback(
+            '/<[^>]*class=["\'][^"\']*elementor-testimonial[^"\']*["\'][^>]*>(.*?)<\/[^>]+>/is',
+            function ( $matches ) {
+                return $this->format_testimonial_marker( $matches[1] );
+            },
+            $content
+        );
+
+        // Pattern 4: Bricks testimonial elements
+        $content = preg_replace_callback(
+            '/<[^>]*class=["\'][^"\']*brxe-testimonial[^"\']*["\'][^>]*>(.*?)<\/[^>]+>/is',
+            function ( $matches ) {
+                return $this->format_testimonial_marker( $matches[1] );
+            },
+            $content
+        );
+
+        // Pattern 5: Common slider/carousel testimonials (Swiper, Slick, etc.)
+        $content = preg_replace_callback(
+            '/<[^>]*class=["\'][^"\']*(?:swiper-slide|slick-slide)[^"\']*["\'][^>]*>.*?(?:testimonial|review|quote)[^<]*<[^>]*>(.*?)<\/[^>]+>/is',
+            function ( $matches ) {
+                return $this->format_testimonial_marker( $matches[1] );
+            },
+            $content
+        );
+
+        return $content;
+    }
+
+    /**
+     * Extract author name from testimonial HTML
+     *
+     * @param string $html Testimonial HTML content.
+     * @return string Author name or empty string.
+     */
+    private function extract_testimonial_author( string $html ): string {
+        // Common author patterns
+        $patterns = array(
+            '/<[^>]*class=["\'][^"\']*(?:author|name|client-name|reviewer|testimonial-name|review-author)[^"\']*["\'][^>]*>(.*?)<\/[^>]+>/is',
+            '/<cite[^>]*>(.*?)<\/cite>/is',
+            '/<strong[^>]*class=["\'][^"\']*name[^"\']*["\'][^>]*>(.*?)<\/strong>/is',
+            '/<span[^>]*class=["\'][^"\']*name[^"\']*["\'][^>]*>(.*?)<\/span>/is',
+        );
+
+        foreach ( $patterns as $pattern ) {
+            if ( preg_match( $pattern, $html, $matches ) ) {
+                $author = wp_strip_all_tags( $matches[1] );
+                $author = trim( $author );
+                if ( ! empty( $author ) && mb_strlen( $author ) < 100 ) {
+                    return $author;
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Extract star rating from testimonial HTML
+     *
+     * @param string $html Testimonial HTML content.
+     * @return string Rating string (e.g., "5/5" or "4.5 stars") or empty.
+     */
+    private function extract_star_rating( string $html ): string {
+        // Pattern 1: Data attribute ratings
+        if ( preg_match( '/data-rating=["\']([0-9.]+)["\']/', $html, $matches ) ) {
+            return $matches[1] . '/5';
+        }
+
+        // Pattern 2: Count filled star icons/classes
+        $filled_stars = preg_match_all( '/(?:star-filled|fas fa-star|icon-star-full|star active|rating-star--filled)/i', $html );
+        if ( $filled_stars > 0 && $filled_stars <= 5 ) {
+            return $filled_stars . '/5 stars';
+        }
+
+        // Pattern 3: Numeric rating in text
+        if ( preg_match( '/(\d(?:\.\d)?)\s*(?:\/\s*5|out of 5|stars?)/i', $html, $matches ) ) {
+            return $matches[1] . '/5';
+        }
+
+        return '';
+    }
+
+    /**
+     * Extract main testimonial text from HTML
+     *
+     * @param string $html Testimonial HTML content.
+     * @return string Testimonial text or empty string.
+     */
+    private function extract_testimonial_text( string $html ): string {
+        // Try to find content in common testimonial text containers
+        $patterns = array(
+            '/<[^>]*class=["\'][^"\']*(?:testimonial-content|review-text|quote-text|testimonial-text|feedback-text|review-content|testimonial-description)[^"\']*["\'][^>]*>(.*?)<\/[^>]+>/is',
+            '/<p[^>]*class=["\'][^"\']*(?:content|text|quote)[^"\']*["\'][^>]*>(.*?)<\/p>/is',
+            '/<blockquote[^>]*>(.*?)<\/blockquote>/is',
+        );
+
+        foreach ( $patterns as $pattern ) {
+            if ( preg_match( $pattern, $html, $matches ) ) {
+                $text = wp_strip_all_tags( $matches[1] );
+                $text = trim( $text );
+                if ( mb_strlen( $text ) > 20 ) {
+                    return $text;
+                }
+            }
+        }
+
+        // Fallback: get all text content and look for the longest paragraph
+        $stripped = wp_strip_all_tags( $html );
+        $stripped = trim( $stripped );
+
+        if ( mb_strlen( $stripped ) > 30 ) {
+            // Remove author name if we can identify it
+            $author = $this->extract_testimonial_author( $html );
+            if ( ! empty( $author ) ) {
+                $stripped = str_replace( $author, '', $stripped );
+                $stripped = trim( $stripped );
+            }
+            return $stripped;
+        }
+
+        return '';
+    }
+
+    /**
+     * Format a testimonial marker from HTML content
+     *
+     * @param string $html Raw testimonial HTML.
+     * @return string Formatted testimonial marker.
+     */
+    private function format_testimonial_marker( string $html ): string {
+        $author = $this->extract_testimonial_author( $html );
+        $rating = $this->extract_star_rating( $html );
+        $text   = $this->extract_testimonial_text( $html );
+
+        if ( empty( $text ) ) {
+            // No meaningful content, return original
+            return $html;
+        }
+
+        $marker = "\n[TESTIMONIAL START]\n";
+        $marker .= "Quote: " . trim( $text ) . "\n";
+        if ( ! empty( $author ) ) {
+            $marker .= "Author: " . trim( $author ) . "\n";
+        }
+        if ( ! empty( $rating ) ) {
+            $marker .= "Rating: " . $rating . "\n";
+        }
+        $marker .= "[TESTIMONIAL END]\n";
+
+        return $marker;
+    }
+
+    /**
+     * Detect and mark FAQ sections in HTML content
+     *
+     * Looks for common FAQ patterns including:
+     * - Accordion elements
+     * - FAQ schema markup
+     * - Question/Answer pairs
+     *
+     * @param string $content HTML content to process.
+     * @return string Content with FAQ markers added.
+     */
+    private function detect_and_mark_faqs( string $content ): string {
+        // Pattern 1: Elements with FAQ/accordion class names
+        $faq_class_pattern = '/<([a-z0-9]+)[^>]*class=["\'][^"\']*(?:faq-item|accordion-item|question-answer|qa-item|faq-entry)[^"\']*["\'][^>]*>(.*?)<\/\1>/is';
+
+        $content = preg_replace_callback(
+            $faq_class_pattern,
+            function ( $matches ) {
+                $inner = $matches[2];
+                $qa    = $this->extract_question_answer( $inner );
+
+                if ( ! empty( $qa['question'] ) && ! empty( $qa['answer'] ) ) {
+                    $marker  = "\n[FAQ ITEM START]\n";
+                    $marker .= "Question: " . trim( $qa['question'] ) . "\n";
+                    $marker .= "Answer: " . trim( $qa['answer'] ) . "\n";
+                    $marker .= "[FAQ ITEM END]\n";
+                    return $marker;
+                }
+
+                return $matches[0];
+            },
+            $content
+        );
+
+        // Pattern 2: Details/summary elements (HTML5 accordion)
+        $content = preg_replace_callback(
+            '/<details[^>]*>(.*?)<\/details>/is',
+            function ( $matches ) {
+                $inner = $matches[1];
+
+                $question = '';
+                $answer   = '';
+
+                // Extract summary as question
+                if ( preg_match( '/<summary[^>]*>(.*?)<\/summary>/is', $inner, $summary_match ) ) {
+                    $question = wp_strip_all_tags( $summary_match[1] );
+                    $answer   = str_replace( $summary_match[0], '', $inner );
+                    $answer   = wp_strip_all_tags( $answer );
+                }
+
+                if ( ! empty( $question ) && ! empty( $answer ) ) {
+                    $marker  = "\n[FAQ ITEM START]\n";
+                    $marker .= "Question: " . trim( $question ) . "\n";
+                    $marker .= "Answer: " . trim( $answer ) . "\n";
+                    $marker .= "[FAQ ITEM END]\n";
+                    return $marker;
+                }
+
+                return $matches[0];
+            },
+            $content
+        );
+
+        // Pattern 3: Elementor accordion/toggle widgets
+        $content = preg_replace_callback(
+            '/<[^>]*class=["\'][^"\']*(?:elementor-accordion-item|elementor-toggle-item)[^"\']*["\'][^>]*>(.*?)<\/[^>]+>/is',
+            function ( $matches ) {
+                $inner = $matches[1];
+                $qa    = $this->extract_question_answer( $inner );
+
+                if ( ! empty( $qa['question'] ) && ! empty( $qa['answer'] ) ) {
+                    $marker  = "\n[FAQ ITEM START]\n";
+                    $marker .= "Question: " . trim( $qa['question'] ) . "\n";
+                    $marker .= "Answer: " . trim( $qa['answer'] ) . "\n";
+                    $marker .= "[FAQ ITEM END]\n";
+                    return $marker;
+                }
+
+                return $matches[0];
+            },
+            $content
+        );
+
+        return $content;
+    }
+
+    /**
+     * Extract question and answer from FAQ HTML
+     *
+     * @param string $html FAQ item HTML.
+     * @return array Array with 'question' and 'answer' keys.
+     */
+    private function extract_question_answer( string $html ): array {
+        $result = array(
+            'question' => '',
+            'answer'   => '',
+        );
+
+        // Question patterns
+        $question_patterns = array(
+            '/<[^>]*class=["\'][^"\']*(?:question|faq-question|accordion-title|toggle-title|accordion-header)[^"\']*["\'][^>]*>(.*?)<\/[^>]+>/is',
+            '/<h[2-6][^>]*>(.*?)<\/h[2-6]>/is',
+            '/<summary[^>]*>(.*?)<\/summary>/is',
+            '/<dt[^>]*>(.*?)<\/dt>/is',
+        );
+
+        foreach ( $question_patterns as $pattern ) {
+            if ( preg_match( $pattern, $html, $matches ) ) {
+                $result['question'] = wp_strip_all_tags( $matches[1] );
+                $result['question'] = trim( $result['question'] );
+                break;
+            }
+        }
+
+        // Answer patterns
+        $answer_patterns = array(
+            '/<[^>]*class=["\'][^"\']*(?:answer|faq-answer|accordion-content|toggle-content|accordion-body|accordion-panel)[^"\']*["\'][^>]*>(.*?)<\/[^>]+>/is',
+            '/<dd[^>]*>(.*?)<\/dd>/is',
+        );
+
+        foreach ( $answer_patterns as $pattern ) {
+            if ( preg_match( $pattern, $html, $matches ) ) {
+                $result['answer'] = wp_strip_all_tags( $matches[1] );
+                $result['answer'] = trim( $result['answer'] );
+                break;
+            }
+        }
+
+        // If we found a question but no answer, try to get remaining content
+        if ( ! empty( $result['question'] ) && empty( $result['answer'] ) ) {
+            $stripped = wp_strip_all_tags( $html );
+            $stripped = str_replace( $result['question'], '', $stripped );
+            $stripped = trim( $stripped );
+            if ( mb_strlen( $stripped ) > 20 ) {
+                $result['answer'] = $stripped;
+            }
+        }
+
+        return $result;
     }
 }

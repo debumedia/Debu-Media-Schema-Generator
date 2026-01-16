@@ -125,6 +125,11 @@ class WP_AI_Schema_Metabox {
                             <?php esc_html_e( 'Fetch from frontend', 'wp-ai-seo-schema-generator' ); ?>
                         </label>
                     <?php endif; ?>
+                    <label title="<?php esc_attr_e( 'Uses two AI passes: first to classify content (testimonials, FAQs, services, etc.), then to generate schema. Recommended for pages with testimonials or complex content.', 'wp-ai-seo-schema-generator' ); ?>" class="ai-jsonld-option-deep">
+                        <input type="checkbox" id="wp_ai_schema_deep_analysis" />
+                        <?php esc_html_e( 'Deep content analysis (2-pass)', 'wp-ai-seo-schema-generator' ); ?>
+                        <span class="ai-jsonld-badge ai-jsonld-badge-recommended"><?php esc_html_e( 'Recommended for testimonials', 'wp-ai-seo-schema-generator' ); ?></span>
+                    </label>
                 </div>
 
                 <div class="ai-jsonld-actions">
@@ -339,6 +344,10 @@ class WP_AI_Schema_Metabox {
                     'rate_limited'         => __( 'Rate limited. Please try again later.', 'wp-ai-seo-schema-generator' ),
                     'schema_current'       => __( 'Schema is current', 'wp-ai-seo-schema-generator' ),
                     'schema_outdated'      => __( 'Content has changed since last generation', 'wp-ai-seo-schema-generator' ),
+                    // Deep analysis (two-pass) strings
+                    'deep_analysis_pass1'  => __( 'Pass 1: Analyzing content...', 'wp-ai-seo-schema-generator' ),
+                    'deep_analysis_pass2'  => __( 'Pass 2: Generating schema...', 'wp-ai-seo-schema-generator' ),
+                    'deep_analysis_success' => __( 'Schema generated with deep analysis!', 'wp-ai-seo-schema-generator' ),
                     // Diagnostic strings
                     'running_diagnostics'  => __( 'Running diagnostics...', 'wp-ai-seo-schema-generator' ),
                     'run_diagnostics'      => __( 'Run Diagnostics', 'wp-ai-seo-schema-generator' ),
