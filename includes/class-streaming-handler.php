@@ -263,11 +263,17 @@ class WP_AI_Schema_Streaming_Handler {
         // Report what was found
         $this->report_analysis_findings( $analysis_data );
 
+        // Debug checkpoint 1
+        $this->send_sse_event( 'debug', array( 'checkpoint' => 'After findings report' ) );
+
         // Phase 3: Pass 2 - Schema Generation with streaming
         $this->send_sse_event( 'status', array(
             'phase'   => 'pass2',
             'message' => 'Generating JSON-LD schema...',
         ) );
+
+        // Debug checkpoint 2
+        $this->send_sse_event( 'debug', array( 'checkpoint' => 'Before build_payload_from_analysis' ) );
 
         // Build schema generation payload
         $schema_payload = $this->prompt_builder->build_payload_from_analysis(
@@ -276,9 +282,13 @@ class WP_AI_Schema_Streaming_Handler {
             $settings
         );
         
-        // Debug: Log analyzed data size
+        // Debug checkpoint 3
         $analyzed_json_size = strlen( wp_json_encode( $analysis_data ) );
-        WP_AI_Schema_Generator::log( "Analyzed content size: " . round( $analyzed_json_size / 1024, 2 ) . " KB" );
+        $this->send_sse_event( 'debug', array( 
+            'checkpoint'           => 'After build_payload_from_analysis',
+            'analyzed_content_kb'  => round( $analyzed_json_size / 1024, 2 ),
+            'payload_built'        => ! empty( $schema_payload ),
+        ) );
 
         // Stream the schema generation
         $schema_result = $this->stream_provider_request(
