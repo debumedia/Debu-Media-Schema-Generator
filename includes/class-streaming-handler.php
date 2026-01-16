@@ -682,21 +682,30 @@ class WP_AI_Schema_Streaming_Handler {
                 if ( $json ) {
                     // Log first chunk to see structure
                     if ( empty( $this->accumulated_content ) ) {
-                        WP_AI_Schema_Generator::log( 'First streaming chunk structure: ' . wp_json_encode( array_keys( $json ) ) );
-                        if ( isset( $json['output'][0] ) ) {
-                            WP_AI_Schema_Generator::log( 'output[0] keys: ' . wp_json_encode( array_keys( $json['output'][0] ) ) );
-                        }
-                        if ( isset( $json['choices'][0] ) ) {
-                            WP_AI_Schema_Generator::log( 'choices[0] keys: ' . wp_json_encode( array_keys( $json['choices'][0] ) ) );
-                        }
+                        WP_AI_Schema_Generator::log( 'First streaming event type: ' . ( $json['type'] ?? 'unknown' ) );
                     }
 
-                    // Responses API uses: output[0].delta.content
-                    // Chat Completions API uses: choices[0].delta.content
-                    $content = $json['output'][0]['delta']['content'] ?? 
-                               $json['choices'][0]['delta']['content'] ?? null;
+                    // Responses API format (GPT-5, recommended)
+                    // Event type: "response.output_text.delta"
+                    // Content location: json.delta
+                    if ( isset( $json['type'] ) && $json['type'] === 'response.output_text.delta' ) {
+                        $content = $json['delta'] ?? null;
 
-                    if ( $content !== null ) {
+                        if ( $content !== null && $content !== '' ) {
+                            $this->accumulated_content .= $content;
+
+                            // Send content event
+                            $this->send_sse_event( 'content', array(
+                                'phase' => $phase,
+                                'chunk' => $content,
+                                'total' => strlen( $this->accumulated_content ),
+                            ) );
+                        }
+                    }
+                    // Chat Completions API format (legacy, DeepSeek)
+                    // Content location: choices[0].delta.content
+                    elseif ( isset( $json['choices'][0]['delta']['content'] ) ) {
+                        $content = $json['choices'][0]['delta']['content'];
                         $this->accumulated_content .= $content;
 
                         // Send content event
