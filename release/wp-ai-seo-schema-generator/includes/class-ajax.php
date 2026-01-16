@@ -534,7 +534,7 @@ class WP_AI_Schema_Ajax {
 
         WP_AI_Schema_Generator::log( sprintf( 'Two-pass schema generation completed for post %d', $post_id ) );
 
-        $result = array(
+        return array(
             'success'        => true,
             'schema'         => $validation['schema'],
             'cached'         => false,
@@ -545,26 +545,6 @@ class WP_AI_Schema_Ajax {
             'two_pass'       => true,
             'analysis_keys'  => array_keys( $analyzed_data ),
         );
-
-        // Include debug data when debug logging is enabled
-        if ( ! empty( $settings['debug_logging'] ) ) {
-            $result['debug'] = array(
-                'pass1_analysis' => $analyzed_data,
-                'pass2_payload'  => array(
-                    'page'            => $payload['page'] ?? null,
-                    'site'            => $payload['site'] ?? null,
-                    'business'        => $payload['business'] ?? null,
-                    'typeHint'        => $payload['typeHint'] ?? null,
-                    'analyzedContent' => $payload['analyzedContent'] ?? null,
-                    // Note: schemaReference is large, so we just note it was included
-                    'hasSchemaRef'    => ! empty( $payload['schemaReference'] ),
-                ),
-                'provider'       => $provider_slug,
-                'model'          => $model,
-            );
-        }
-
-        return $result;
     }
 
     /**

@@ -280,48 +280,40 @@ class WP_AI_Schema_Content_Analyzer {
      * @return string System prompt.
      */
     public static function get_analysis_system_prompt(): string {
-        return 'You are a meticulous content analysis AI. Your job is to read through a webpage\'s content from TOP to BOTTOM and extract EVERY piece of structured information you find.
+        return 'You are a content analysis AI that extracts and classifies structured information from web pages.
 
-CRITICAL INSTRUCTION: You must find and extract ALL items of each type. If there are 5 testimonials, extract all 5. If there are 10 services, extract all 10. DO NOT stop at the first one. DO NOT summarize or consolidate multiple items into one.
+YOUR TASK: Analyze the page content and extract ALL identifiable information into a structured JSON format.
+This data will be used to generate schema.org structured data, so be thorough and accurate.
 
-OUTPUT: Valid JSON only. No markdown, no code fences, no explanations.
+OUTPUT FORMAT: Valid JSON only. No markdown, no explanations, no code fences.
 
-PROCESS THE CONTENT IN ORDER:
-1. Read through the entire content from start to finish
-2. As you encounter each element (testimonial, service, FAQ, etc.), add it to the appropriate array
-3. Maintain the order in which items appear on the page
-4. Count items as you go - at the end, verify you captured all of them
-
-JSON STRUCTURE:
+REQUIRED OUTPUT STRUCTURE:
 {
-    "page_type": "service_page|about_page|contact_page|blog_post|product_page|landing_page|faq_page|testimonials_page|other",
-    "page_summary": "Brief 1-2 sentence summary",
-    "content_sections_found": ["hero", "services", "testimonials", "faq", "contact", "team", "etc"],
+    "page_type": "service_page|about_page|contact_page|blog_post|product_page|landing_page|faq_page|other",
+    "page_summary": "Brief 1-2 sentence summary of the page purpose",
     
     "organization": {
-        "name": "Business name",
-        "description": "Business description",
-        "industry": "Industry/sector"
+        "name": "Business/organization name if found",
+        "description": "Business description if found",
+        "industry": "Industry/sector if identifiable"
     },
     
     "services": [
         {
-            "position": 1,
             "name": "Service name",
-            "description": "Full service description",
+            "description": "Service description",
             "features": ["feature1", "feature2"],
             "price": "Price if mentioned",
-            "price_currency": "Currency code"
+            "price_currency": "USD/EUR/etc if found"
         }
     ],
     
     "testimonials": [
         {
-            "position": 1,
-            "quote": "COMPLETE testimonial text - copy the FULL quote exactly as written",
-            "author_name": "Person name",
-            "author_title": "Job title if shown",
-            "author_company": "Company if shown",
+            "quote": "The full testimonial text",
+            "author_name": "Name of the person",
+            "author_title": "Job title if available",
+            "author_company": "Company name if available",
             "rating": 5,
             "rating_max": 5
         }
@@ -329,55 +321,51 @@ JSON STRUCTURE:
     
     "faqs": [
         {
-            "position": 1,
-            "question": "The exact question",
-            "answer": "The exact answer"
+            "question": "The question text",
+            "answer": "The answer text"
         }
     ],
     
     "team_members": [
         {
-            "position": 1,
             "name": "Full name",
-            "job_title": "Role/position",
-            "description": "Bio text",
-            "email": "Email if shown",
-            "phone": "Phone if shown"
+            "job_title": "Position/role",
+            "description": "Bio if available",
+            "email": "Email if provided",
+            "phone": "Phone if provided"
         }
     ],
     
     "contact_info": {
-        "email": "Email address",
-        "phone": "Phone number",
+        "email": "Email address if found",
+        "phone": "Phone number if found",
         "address": {
-            "street": "Street",
+            "street": "Street address",
             "city": "City",
             "state": "State/Province",
-            "postal_code": "ZIP/Postal",
+            "postal_code": "ZIP/Postal code",
             "country": "Country"
         },
-        "hours": "Business hours"
+        "hours": "Business hours if mentioned"
     },
     
     "products": [
         {
-            "position": 1,
             "name": "Product name",
             "description": "Product description",
             "price": "Price",
             "price_currency": "Currency",
-            "sku": "SKU"
+            "sku": "SKU if available"
         }
     ],
     
     "events": [
         {
-            "position": 1,
             "name": "Event name",
-            "description": "Description",
-            "start_date": "Date/time",
-            "end_date": "End date if available",
-            "location": "Location"
+            "description": "Event description",
+            "start_date": "Start date/time",
+            "end_date": "End date/time if available",
+            "location": "Event location"
         }
     ],
     
@@ -389,55 +377,39 @@ JSON STRUCTURE:
         }
     ],
     
-    "statistics": {
-        "client_count": "e.g., 500+ clients",
-        "years_in_business": "e.g., 15 years",
-        "projects_completed": "e.g., 1000+ projects",
+    "social_proof": {
+        "client_count": "Number of clients if mentioned (e.g., \'500+ clients\')",
+        "years_in_business": "Years of experience if mentioned",
         "awards": ["Award 1", "Award 2"],
-        "certifications": ["Cert 1"]
+        "certifications": ["Certification 1"]
     },
     
-    "item_counts": {
-        "testimonials_found": 0,
-        "services_found": 0,
-        "faqs_found": 0,
-        "team_members_found": 0,
-        "products_found": 0
-    }
+    "calls_to_action": [
+        {
+            "text": "CTA button/link text",
+            "url": "URL if available"
+        }
+    ]
 }
 
-TESTIMONIAL DETECTION - VERY IMPORTANT:
-Look for testimonials in these formats:
-- [TESTIMONIAL START] ... [TESTIMONIAL END] markers (most reliable)
-- [QUOTE START] ... [QUOTE END] markers  
-- Text that appears to be a customer quote/review
-- Sections under headings like "Testimonials", "What Our Clients Say", "Reviews", "Client Feedback"
-- Quoted text followed by a person\'s name
-- Star ratings associated with text
-
-For EACH testimonial you find:
-- Copy the COMPLETE quote text - do not truncate or summarize
-- Extract the author name exactly as shown
-- Include job title and company if present
-- Include rating if shown (convert stars to numbers)
-
 EXTRACTION RULES:
-1. Extract ALL items - if you see 3 testimonials, output 3 testimonials
-2. Preserve exact text - do not paraphrase quotes or descriptions
-3. Include position numbers to maintain order
-4. Only include sections that have data (omit empty arrays)
-5. NEVER invent information - only extract what is explicitly present
-6. The "item_counts" section helps verify you found everything
+1. ONLY include sections that have actual data. Omit empty arrays and null values.
+2. NEVER invent information - only extract what is clearly present in the content.
+3. For testimonials: Look for quoted text, client names, star ratings, review markers.
+4. For services: Each distinct service mentioned should be a separate entry.
+5. For FAQs: Only include if there are clear question/answer pairs.
+6. For contact info: Extract emails, phones, and addresses when explicitly shown.
+7. Preserve the exact text of testimonials/quotes - do not paraphrase.
+8. If rating is shown as stars (e.g., 5 stars), convert to numeric (rating: 5, rating_max: 5).
 
-CONTENT STRUCTURE MARKERS:
-- [TESTIMONIAL START/END] = testimonial/review (EXTRACT ALL)
-- [FAQ ITEM START/END] = FAQ Q&A pair (EXTRACT ALL)  
-- [QUOTE START/END] = general quote
-- ## [Heading] ## = section heading
-- [LIST START/END] = bullet list
-- [SECTION] = content section boundary
+CONTENT MARKERS TO LOOK FOR:
+- [TESTIMONIAL START/END] markers indicate testimonials
+- [FAQ ITEM START/END] markers indicate FAQ entries
+- [QUOTE START/END] markers indicate quotes
+- ## [Heading] ## markers indicate section headings
+- [LIST START/END] markers indicate lists
 
-FINAL CHECK: Before outputting, count items in each array and put counts in "item_counts". If the page clearly shows multiple testimonials but you only have 1, you missed some - go back and find them all.';
+Remember: Accuracy over completeness. Only include what you can clearly identify from the content.';
     }
 
     /**
@@ -452,9 +424,7 @@ FINAL CHECK: Before outputting, count items in each array and put counts in "ite
         $business_data = $payload['businessData'] ?? null;
         $type_hint     = $payload['typeHint'] ?? 'auto';
 
-        $message = 'Analyze this webpage content and extract ALL structured information.
-
-IMPORTANT: Find and extract EVERY testimonial, service, FAQ, team member, etc. Do not stop at just one of each type.
+        $message = 'Analyze the following page content and extract structured information:
 
 PAGE INFORMATION:
 - Title: ' . ( $page_data['title'] ?? 'Unknown' ) . '
@@ -469,54 +439,27 @@ SITE INFORMATION:
 
         if ( ! empty( $business_data ) ) {
             $message .= '
-KNOWN BUSINESS INFO (verified):
+KNOWN BUSINESS INFORMATION (verified by site owner - use this as reference):
 - Business Name: ' . ( $business_data['name'] ?? '' ) . '
-- Description: ' . ( $business_data['description'] ?? '' ) . '
-- Email: ' . ( $business_data['email'] ?? '' ) . '
-- Phone: ' . ( $business_data['phone'] ?? '' ) . '
+- Business Description: ' . ( $business_data['description'] ?? '' ) . '
+- Business Email: ' . ( $business_data['email'] ?? '' ) . '
+- Business Phone: ' . ( $business_data['phone'] ?? '' ) . '
 ';
         }
 
         if ( 'auto' !== $type_hint ) {
             $message .= '
-PAGE TYPE HINT: ' . $type_hint . '
-';
-        }
-
-        // Count markers in content to help the AI know what to expect
-        $content         = $page_data['content'] ?? '';
-        $testimonial_markers = substr_count( $content, '[TESTIMONIAL START]' );
-        $quote_markers       = substr_count( $content, '[QUOTE START]' );
-        $faq_markers         = substr_count( $content, '[FAQ ITEM START]' );
-
-        if ( $testimonial_markers > 0 || $quote_markers > 0 || $faq_markers > 0 ) {
-            $message .= '
-CONTENT MARKERS DETECTED:';
-            if ( $testimonial_markers > 0 ) {
-                $message .= '
-- ' . $testimonial_markers . ' [TESTIMONIAL] markers found - extract ALL ' . $testimonial_markers . ' testimonials';
-            }
-            if ( $quote_markers > 0 ) {
-                $message .= '
-- ' . $quote_markers . ' [QUOTE] markers found - extract ALL ' . $quote_markers . ' quotes';
-            }
-            if ( $faq_markers > 0 ) {
-                $message .= '
-- ' . $faq_markers . ' [FAQ ITEM] markers found - extract ALL ' . $faq_markers . ' FAQ items';
-            }
-            $message .= '
+HINT: The site owner suggests this is primarily a ' . $type_hint . ' page.
 ';
         }
 
         $message .= '
-PAGE CONTENT (read through completely, extract ALL items):
+PAGE CONTENT:
 """
-' . $content . '
+' . ( $page_data['content'] ?? '' ) . '
 """
 
-TASK: Read the content from start to finish. For each testimonial, service, FAQ, team member, etc. you encounter, add it to the appropriate array. Count your items at the end and include in "item_counts".
-
-Output valid JSON only.';
+Extract and classify all identifiable information from this content. Output valid JSON only.';
 
         return $message;
     }

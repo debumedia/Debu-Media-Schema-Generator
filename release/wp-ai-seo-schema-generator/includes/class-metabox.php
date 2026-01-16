@@ -321,13 +321,12 @@ class WP_AI_Schema_Metabox {
             'ai-jsonld-metabox',
             'wpAiSchemaMetabox',
             array(
-                'ajax_url'    => admin_url( 'admin-ajax.php' ),
-                'nonce'       => wp_create_nonce( 'wp_ai_schema_generate_' . $post->ID ),
-                'post_id'     => $post->ID,
-                'post_url'    => get_permalink( $post->ID ),
+                'ajax_url'   => admin_url( 'admin-ajax.php' ),
+                'nonce'      => wp_create_nonce( 'wp_ai_schema_generate_' . $post->ID ),
+                'post_id'    => $post->ID,
+                'post_url'   => get_permalink( $post->ID ),
                 'post_status' => $post->post_status,
-                'debug'       => ! empty( $settings['debug_logging'] ), // Enable console debug when debug_logging is on
-                'i18n'        => array(
+                'i18n'       => array(
                     'generating'           => __( 'Generating...', 'wp-ai-seo-schema-generator' ),
                     'generate'             => __( 'Generate JSON-LD', 'wp-ai-seo-schema-generator' ),
                     'preparing'            => __( 'Preparing content...', 'wp-ai-seo-schema-generator' ),
