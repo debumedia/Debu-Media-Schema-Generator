@@ -228,16 +228,31 @@ class WP_AI_Schema_Output {
 
         // Check 2: Valid JSON
         $valid_json = false;
+        $validation_message = '';
         if ( ! empty( $schema ) ) {
-            json_decode( $schema );
-            $valid_json = ( json_last_error() === JSON_ERROR_NONE );
+            // Use the schema validator for consistent validation
+            $validator = wp_ai_schema_generator()->get_component( 'schema_validator' );
+            if ( $validator ) {
+                $validation = $validator->validate( $schema );
+                $valid_json = $validation['valid'];
+                if ( ! $valid_json && ! empty( $validation['errors'] ) ) {
+                    $validation_message = ' Errors: ' . implode( ', ', $validation['errors'] );
+                }
+            } else {
+                // Fallback to simple JSON decode
+                json_decode( $schema );
+                $valid_json = ( json_last_error() === JSON_ERROR_NONE );
+                if ( ! $valid_json ) {
+                    $validation_message = ' Error: ' . json_last_error_msg();
+                }
+            }
         }
         $checks['valid_json'] = array(
             'pass'    => $valid_json,
             'label'   => __( 'Valid JSON', 'wp-ai-seo-schema-generator' ),
             'message' => $valid_json
                 ? __( 'Schema is valid JSON.', 'wp-ai-seo-schema-generator' )
-                : __( 'Schema contains invalid JSON. Try regenerating.', 'wp-ai-seo-schema-generator' ),
+                : __( 'Schema contains invalid JSON. Try regenerating.', 'wp-ai-seo-schema-generator' ) . $validation_message,
         );
         if ( ! $valid_json && ! empty( $schema ) ) {
             $all_pass = false;
