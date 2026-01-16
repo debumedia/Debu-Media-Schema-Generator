@@ -422,6 +422,12 @@ class WP_AI_Schema_Streaming_Handler {
         if ( 'openai' === $provider_slug ) {
             // OpenAI: use max_completion_tokens, skip temperature (some models don't support it)
             $body['max_completion_tokens'] = $max_tokens;
+
+            // For GPT-5 models with reasoning capability, set minimal reasoning for speed
+            // This dramatically reduces latency from 100+ seconds to ~10-20 seconds
+            if ( strpos( $model, 'gpt-5' ) !== false ) {
+                $body['reasoning_effort'] = 'minimal';
+            }
         } else {
             // DeepSeek: use max_tokens and temperature
             $body['max_tokens'] = $max_tokens;
