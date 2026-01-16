@@ -3,7 +3,7 @@
  * Plugin Name: WP AI SEO Schema Generator
  * Plugin URI: https://debumedia.com/wp-ai-seo-schema-generator
  * Description: Automatically generates schema.org JSON-LD structured data for WordPress pages using AI (DeepSeek, OpenAI).
- * Version: 1.6.3
+ * Version: 1.7.0
  * Author: Debu Media
  * Author URI: https://debumedia.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Plugin constants
-define( 'WP_AI_SCHEMA_VERSION', '1.6.3' );
+define( 'WP_AI_SCHEMA_VERSION', '1.7.0' );
 define( 'WP_AI_SCHEMA_PLUGIN_FILE', __FILE__ );
 define( 'WP_AI_SCHEMA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WP_AI_SCHEMA_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -78,6 +78,7 @@ final class WP_AI_Schema_Generator {
     private $metabox;
     private $ajax;
     private $schema_output;
+    private $streaming_handler;
 
     /**
      * Get plugin instance
@@ -125,6 +126,7 @@ final class WP_AI_Schema_Generator {
         require_once WP_AI_SCHEMA_PLUGIN_DIR . 'includes/class-metabox.php';
         require_once WP_AI_SCHEMA_PLUGIN_DIR . 'includes/class-ajax.php';
         require_once WP_AI_SCHEMA_PLUGIN_DIR . 'includes/class-schema-output.php';
+        require_once WP_AI_SCHEMA_PLUGIN_DIR . 'includes/class-streaming-handler.php';
     }
 
     /**
@@ -169,6 +171,14 @@ final class WP_AI_Schema_Generator {
 
         // Frontend output
         $this->schema_output = new WP_AI_Schema_Output( $this->conflict_detector );
+
+        // Streaming handler for real-time progress feedback
+        $this->streaming_handler = new WP_AI_Schema_Streaming_Handler(
+            $this->provider_registry,
+            $this->content_processor,
+            $this->encryption,
+            $this->prompt_builder
+        );
     }
 
     /**
@@ -177,6 +187,9 @@ final class WP_AI_Schema_Generator {
     private function register_hooks() {
         // Load text domain
         add_action( 'init', array( $this, 'load_textdomain' ) );
+
+        // Register streaming REST routes
+        $this->streaming_handler->register_routes();
 
         // Activation and deactivation
         register_activation_hook( WP_AI_SCHEMA_PLUGIN_FILE, array( $this, 'activate' ) );

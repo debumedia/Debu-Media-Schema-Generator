@@ -116,7 +116,7 @@
     }
 
     /**
-     * Start two-pass progress indicator
+     * Start two-pass progress indicator (fallback when not streaming)
      */
     function startTwoPassProgress() {
         var $button = $('#wp_ai_schema_generate');
@@ -137,6 +137,14 @@
     }
 
     /**
+     * Update button with streaming status
+     */
+    function updateStreamingStatus(message) {
+        var $button = $('#wp_ai_schema_generate');
+        $button.text(message);
+    }
+
+    /**
      * Progress steps for two-pass generation
      */
     var twoPassSteps = [
@@ -145,7 +153,12 @@
     ];
 
     /**
-     * Generate schema via AJAX
+     * Active EventSource for streaming
+     */
+    var activeEventSource = null;
+
+    /**
+     * Generate schema via AJAX or Streaming
      */
     function generateSchema() {
         var $button = $('#wp_ai_schema_generate');
@@ -164,6 +177,209 @@
         $spinner.addClass('is-active');
         $message.removeClass('success error info').addClass('hidden');
 
+        // Debug: Log request
+        debugLog('Request Parameters', {
+            postId: wpAiSchemaMetabox.post_id,
+            typeHint: typeHint,
+            forceRegenerate: forceRegenerate,
+            fetchFrontend: fetchFrontend,
+            deepAnalysis: deepAnalysis,
+            streaming: deepAnalysis && wpAiSchemaMetabox.rest_url
+        });
+
+        // Use streaming for deep analysis if REST URL is available
+        if (deepAnalysis && wpAiSchemaMetabox.rest_url) {
+            generateSchemaStreaming();
+        } else {
+            generateSchemaAjax(deepAnalysis);
+        }
+    }
+
+    /**
+     * Generate schema with streaming (real-time progress)
+     */
+    function generateSchemaStreaming() {
+        var $button = $('#wp_ai_schema_generate');
+        var $spinner = $('.ai-jsonld-spinner');
+        var $preview = $('#wp_ai_schema_schema_preview');
+        var startTime = Date.now();
+
+        // Close any existing connection
+        if (activeEventSource) {
+            activeEventSource.close();
+        }
+
+        // Build the streaming URL
+        var streamUrl = wpAiSchemaMetabox.rest_url + 'wp-ai-schema/v1/stream';
+
+        debugLog('Starting streaming request', { url: streamUrl });
+
+        // Show initial status
+        updateStreamingStatus('Connecting...');
+
+        // Use fetch with POST for the streaming request
+        fetch(streamUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-WP-Nonce': wpAiSchemaMetabox.rest_nonce
+            },
+            body: JSON.stringify({
+                post_id: wpAiSchemaMetabox.post_id,
+                nonce: wpAiSchemaMetabox.nonce
+            })
+        }).then(function(response) {
+            if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+            }
+
+            var reader = response.body.getReader();
+            var decoder = new TextDecoder();
+            var buffer = '';
+
+            function processStream() {
+                return reader.read().then(function(result) {
+                    if (result.done) {
+                        debugLog('Stream complete', { elapsed: (Date.now() - startTime) / 1000 + 's' });
+                        return;
+                    }
+
+                    buffer += decoder.decode(result.value, { stream: true });
+
+                    // Process complete events in buffer
+                    var lines = buffer.split('\n');
+                    buffer = lines.pop(); // Keep incomplete line in buffer
+
+                    lines.forEach(function(line) {
+                        line = line.trim();
+                        if (!line) return;
+
+                        if (line.startsWith('event: ')) {
+                            // Store event type for next data line
+                            window._sseEventType = line.substring(7);
+                        } else if (line.startsWith('data: ')) {
+                            var eventType = window._sseEventType || 'message';
+                            var data = line.substring(6);
+
+                            try {
+                                var parsed = JSON.parse(data);
+                                handleStreamEvent(eventType, parsed, startTime);
+                            } catch (e) {
+                                debugLog('Parse error', { data: data, error: e });
+                            }
+                        }
+                    });
+
+                    return processStream();
+                });
+            }
+
+            return processStream();
+        }).catch(function(error) {
+            debugLog('Streaming error', error);
+            showMessage('error', 'Streaming failed: ' + error.message);
+            finishGeneration();
+        });
+    }
+
+    /**
+     * Handle a streaming event
+     */
+    function handleStreamEvent(eventType, data, startTime) {
+        var $button = $('#wp_ai_schema_generate');
+        var $preview = $('#wp_ai_schema_schema_preview');
+        var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+        debugLog('Stream event: ' + eventType, data);
+
+        switch (eventType) {
+            case 'status':
+                // Update button with current status
+                var statusText = data.message || 'Processing...';
+                updateStreamingStatus(statusText + ' (' + elapsed + 's)');
+
+                // Log findings if present
+                if (data.findings) {
+                    console.log('%c[AI Schema] Content found:', 'color: #28a745; font-weight: bold;', data.findings);
+                }
+                break;
+
+            case 'content':
+                // Show that content is being generated
+                if (data.phase === 'pass1') {
+                    updateStreamingStatus('AI analyzing... (' + elapsed + 's)');
+                } else if (data.phase === 'pass2') {
+                    updateStreamingStatus('Generating schema... (' + elapsed + 's)');
+                }
+                break;
+
+            case 'complete':
+                // Success! Update the preview
+                var schema = data.schema;
+                try {
+                    var formatted = JSON.stringify(JSON.parse(schema), null, 2);
+                    $preview.val(formatted);
+                } catch (e) {
+                    $preview.val(schema);
+                }
+
+                showMessage('success', data.message || 'Schema generated with streaming!');
+                updateStatus(true, Math.floor(Date.now() / 1000));
+
+                // Enable copy and validate buttons
+                $('#wp_ai_schema_copy, #wp_ai_schema_validate').prop('disabled', false);
+                $('#wp_ai_schema_force_regenerate').prop('checked', false);
+
+                console.log('%c[AI Schema] Complete!', 'color: #28a745; font-weight: bold; font-size: 14px;');
+                console.log('  Total time: ' + elapsed + 's');
+
+                finishGeneration();
+
+                // Auto-run diagnostics
+                setTimeout(function() {
+                    runDiagnostics();
+                }, 500);
+                break;
+
+            case 'error':
+                showMessage('error', data.message || 'An error occurred');
+                finishGeneration();
+                break;
+        }
+    }
+
+    /**
+     * Finish generation (cleanup)
+     */
+    function finishGeneration() {
+        var $button = $('#wp_ai_schema_generate');
+        var $spinner = $('.ai-jsonld-spinner');
+
+        stopProgress();
+        $spinner.removeClass('is-active');
+        $button.removeClass('generating').text(wpAiSchemaMetabox.i18n.generate);
+        $button.prop('disabled', false);
+
+        if (activeEventSource) {
+            activeEventSource.close();
+            activeEventSource = null;
+        }
+
+        startCooldown();
+    }
+
+    /**
+     * Generate schema via traditional AJAX (fallback)
+     */
+    function generateSchemaAjax(deepAnalysis) {
+        var $button = $('#wp_ai_schema_generate');
+        var $spinner = $('.ai-jsonld-spinner');
+        var $preview = $('#wp_ai_schema_schema_preview');
+
+        var typeHint = $('#wp_ai_schema_type_hint').val();
+        var forceRegenerate = $('#wp_ai_schema_force_regenerate').is(':checked');
+        var fetchFrontend = $('#wp_ai_schema_fetch_frontend').is(':checked');
+
         // Start progress indicator (use different steps for two-pass)
         if (deepAnalysis) {
             startTwoPassProgress();
@@ -181,16 +397,6 @@
             fetch_frontend: fetchFrontend ? 1 : 0,
             deep_analysis: deepAnalysis ? 1 : 0
         };
-
-        // Debug: Log request
-        debugLog('Request Parameters', {
-            postId: wpAiSchemaMetabox.post_id,
-            typeHint: typeHint,
-            forceRegenerate: forceRegenerate,
-            fetchFrontend: fetchFrontend,
-            deepAnalysis: deepAnalysis,
-            timeout: deepAnalysis ? '5 min' : '2.5 min'
-        });
 
         // Make AJAX request
         $.ajax({
