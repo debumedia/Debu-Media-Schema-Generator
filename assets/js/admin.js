@@ -11,6 +11,7 @@
     function init() {
         bindTestConnection();
         bindApiKeyToggle();
+        bindLocationRepeater();
     }
 
     /**
@@ -80,6 +81,122 @@
                     $icon.removeClass('dashicons-hidden').addClass('dashicons-visibility');
                 }
             });
+        }
+    }
+
+    /**
+     * Bind location repeater functionality
+     */
+    function bindLocationRepeater() {
+        var $container = $('#ai-jsonld-locations');
+        var $addButton = $('#ai-jsonld-add-location');
+
+        if ($container.length === 0) {
+            return;
+        }
+
+        // Add new location
+        $addButton.on('click', function(e) {
+            e.preventDefault();
+            addLocation();
+        });
+
+        // Remove location (delegated)
+        $container.on('click', '.ai-jsonld-remove-location', function(e) {
+            e.preventDefault();
+            removeLocation($(this).closest('.ai-jsonld-location'));
+        });
+    }
+
+    /**
+     * Add a new location block
+     */
+    function addLocation() {
+        var $container = $('#ai-jsonld-locations');
+        var $locations = $container.find('.ai-jsonld-location');
+        var newIndex = $locations.length;
+
+        // Clone the first location as template
+        var $template = $locations.first().clone();
+
+        // Update index in all field names and clear values
+        $template.attr('data-index', newIndex);
+        $template.find('input, textarea').each(function() {
+            var $field = $(this);
+            var name = $field.attr('name');
+
+            if (name) {
+                // Replace the index in the name attribute
+                name = name.replace(/\[business_locations\]\[\d+\]/, '[business_locations][' + newIndex + ']');
+                $field.attr('name', name);
+            }
+
+            // Clear the value
+            $field.val('');
+        });
+
+        // Update location number
+        $template.find('.location-number').text(newIndex + 1);
+
+        // Show remove button
+        $template.find('.ai-jsonld-remove-location').show();
+
+        // Also show remove button on existing locations
+        $container.find('.ai-jsonld-remove-location').show();
+
+        // Append to container
+        $container.append($template);
+
+        // Scroll to new location
+        $template[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    /**
+     * Remove a location block
+     */
+    function removeLocation($location) {
+        var $container = $('#ai-jsonld-locations');
+        var $locations = $container.find('.ai-jsonld-location');
+
+        // Don't remove if it's the last one
+        if ($locations.length <= 1) {
+            return;
+        }
+
+        // Remove the location
+        $location.slideUp(300, function() {
+            $(this).remove();
+            reindexLocations();
+        });
+    }
+
+    /**
+     * Reindex all locations after removal
+     */
+    function reindexLocations() {
+        var $container = $('#ai-jsonld-locations');
+        var $locations = $container.find('.ai-jsonld-location');
+
+        $locations.each(function(index) {
+            var $location = $(this);
+            $location.attr('data-index', index);
+            $location.find('.location-number').text(index + 1);
+
+            // Update all field names
+            $location.find('input, textarea').each(function() {
+                var $field = $(this);
+                var name = $field.attr('name');
+
+                if (name) {
+                    name = name.replace(/\[business_locations\]\[\d+\]/, '[business_locations][' + index + ']');
+                    $field.attr('name', name);
+                }
+            });
+        });
+
+        // Hide remove button if only one location remains
+        if ($locations.length <= 1) {
+            $locations.find('.ai-jsonld-remove-location').hide();
         }
     }
 

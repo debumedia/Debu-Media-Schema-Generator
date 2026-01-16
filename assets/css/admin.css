@@ -106,6 +106,154 @@
     margin-top: 2em;
 }
 
+/* ============================================
+   Business Details Section
+   ============================================ */
+
+/* Social Links */
+.ai-jsonld-social-links {
+    display: grid;
+    gap: 10px;
+    max-width: 600px;
+}
+
+.ai-jsonld-social-link-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    align-items: center;
+    gap: 10px;
+}
+
+.ai-jsonld-social-link-row label {
+    font-weight: 500;
+}
+
+.ai-jsonld-social-link-row input {
+    width: 100%;
+}
+
+/* Locations Repeater */
+.ai-jsonld-locations-wrapper {
+    max-width: 800px;
+}
+
+.ai-jsonld-locations {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.ai-jsonld-location {
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 15px;
+}
+
+.ai-jsonld-location-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #ddd;
+}
+
+.ai-jsonld-location-header h4 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.ai-jsonld-location-header .location-number {
+    background: #0073aa;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    margin-left: 5px;
+}
+
+.ai-jsonld-location-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.ai-jsonld-field-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.ai-jsonld-field-row label {
+    font-weight: 500;
+    font-size: 13px;
+    color: #333;
+}
+
+.ai-jsonld-field-row input {
+    width: 100%;
+    max-width: 400px;
+}
+
+.ai-jsonld-field-row-half {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.ai-jsonld-field-row-half > div {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.ai-jsonld-field-row-half input {
+    width: 100%;
+    max-width: none;
+}
+
+/* Opening Hours */
+.ai-jsonld-opening-hours {
+    display: grid;
+    gap: 8px;
+    max-width: 350px;
+}
+
+.ai-jsonld-hours-row {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    align-items: center;
+    gap: 10px;
+}
+
+.ai-jsonld-hours-row .day-label {
+    font-size: 13px;
+    color: #555;
+}
+
+.ai-jsonld-hours-row input {
+    width: 100%;
+}
+
+/* Add Location Button */
+#ai-jsonld-add-location {
+    margin-top: 15px;
+}
+
+/* Remove Location Button */
+.ai-jsonld-remove-location {
+    color: #a00;
+    border-color: #a00;
+}
+
+.ai-jsonld-remove-location:hover {
+    background: #a00;
+    color: #fff;
+    border-color: #a00;
+}
+
 /* Responsive adjustments */
 @media screen and (max-width: 782px) {
     .ai-jsonld-api-key-wrapper {
@@ -120,5 +268,17 @@
 
     .ai-jsonld-settings .form-table th {
         width: auto;
+    }
+
+    .ai-jsonld-field-row-half {
+        grid-template-columns: 1fr;
+    }
+
+    .ai-jsonld-social-link-row {
+        grid-template-columns: 1fr;
+    }
+
+    .ai-jsonld-hours-row {
+        grid-template-columns: 80px 1fr;
     }
 }

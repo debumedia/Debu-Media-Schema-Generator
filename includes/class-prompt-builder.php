@@ -50,6 +50,7 @@ class AI_JSONLD_Prompt_Builder {
         return array(
             'page'            => $this->build_page_data( $post, $settings ),
             'site'            => $this->build_site_data(),
+            'business'        => $this->build_business_data( $settings ),
             'typeHint'        => $type_hint,
             'schemaReference' => $this->build_schema_reference( $type_hint ),
         );
@@ -120,6 +121,102 @@ class AI_JSONLD_Prompt_Builder {
             'url'         => home_url(),
             'description' => get_bloginfo( 'description' ),
         );
+    }
+
+    /**
+     * Build business data array from settings
+     *
+     * @param array $settings Plugin settings.
+     * @return array|null Business data or null if not configured.
+     */
+    private function build_business_data( array $settings ): ?array {
+        // Check if any business data is configured
+        $has_data = ! empty( $settings['business_name'] ) ||
+                    ! empty( $settings['business_email'] ) ||
+                    ! empty( $settings['business_phone'] ) ||
+                    ! empty( $settings['business_locations'] );
+
+        if ( ! $has_data ) {
+            return null;
+        }
+
+        $business = array(
+            'name'         => $settings['business_name'] ?? '',
+            'description'  => $settings['business_description'] ?? '',
+            'logo'         => $settings['business_logo'] ?? '',
+            'email'        => $settings['business_email'] ?? '',
+            'phone'        => $settings['business_phone'] ?? '',
+            'foundingDate' => $settings['business_founding_date'] ?? '',
+        );
+
+        // Add social links (only non-empty ones)
+        $social_links = array();
+        if ( ! empty( $settings['business_social_links'] ) && is_array( $settings['business_social_links'] ) ) {
+            foreach ( $settings['business_social_links'] as $platform => $url ) {
+                if ( ! empty( $url ) ) {
+                    $social_links[] = $url;
+                }
+            }
+        }
+        if ( ! empty( $social_links ) ) {
+            $business['sameAs'] = $social_links;
+        }
+
+        // Add locations
+        if ( ! empty( $settings['business_locations'] ) && is_array( $settings['business_locations'] ) ) {
+            $locations = array();
+
+            foreach ( $settings['business_locations'] as $location ) {
+                $loc_data = array(
+                    'name'       => $location['name'] ?? '',
+                    'address'    => array(
+                        'streetAddress'   => $location['street'] ?? '',
+                        'addressLocality' => $location['city'] ?? '',
+                        'addressRegion'   => $location['state'] ?? '',
+                        'postalCode'      => $location['postal_code'] ?? '',
+                        'addressCountry'  => $location['country'] ?? '',
+                    ),
+                    'telephone'  => $location['phone'] ?? '',
+                    'email'      => $location['email'] ?? '',
+                );
+
+                // Add opening hours if configured
+                if ( ! empty( $location['hours'] ) && is_array( $location['hours'] ) ) {
+                    $hours = array();
+                    $day_map = array(
+                        'monday'    => 'Mo',
+                        'tuesday'   => 'Tu',
+                        'wednesday' => 'We',
+                        'thursday'  => 'Th',
+                        'friday'    => 'Fr',
+                        'saturday'  => 'Sa',
+                        'sunday'    => 'Su',
+                    );
+
+                    foreach ( $location['hours'] as $day => $time ) {
+                        if ( ! empty( $time ) && isset( $day_map[ $day ] ) ) {
+                            $hours[ $day_map[ $day ] ] = $time;
+                        }
+                    }
+
+                    if ( ! empty( $hours ) ) {
+                        $loc_data['openingHours'] = $hours;
+                    }
+                }
+
+                // Remove empty address fields
+                $loc_data['address'] = array_filter( $loc_data['address'] );
+
+                $locations[] = array_filter( $loc_data );
+            }
+
+            if ( ! empty( $locations ) ) {
+                $business['locations'] = $locations;
+            }
+        }
+
+        // Remove empty values
+        return array_filter( $business );
     }
 
     /**

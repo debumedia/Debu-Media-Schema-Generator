@@ -104,6 +104,16 @@ class AI_JSONLD_Admin {
 
         $this->add_provider_fields();
 
+        // Business Details section
+        add_settings_section(
+            'ai_jsonld_business_section',
+            __( 'Business Details', 'ai-jsonld-generator' ),
+            array( $this, 'render_business_section' ),
+            self::PAGE_SLUG
+        );
+
+        $this->add_business_fields();
+
         // Generation section
         add_settings_section(
             'ai_jsonld_generation_section',
@@ -252,6 +262,75 @@ class AI_JSONLD_Admin {
     }
 
     /**
+     * Add business settings fields
+     */
+    private function add_business_fields() {
+        add_settings_field(
+            'business_name',
+            __( 'Business Name', 'ai-jsonld-generator' ),
+            array( $this, 'render_business_name_field' ),
+            self::PAGE_SLUG,
+            'ai_jsonld_business_section'
+        );
+
+        add_settings_field(
+            'business_description',
+            __( 'Business Description', 'ai-jsonld-generator' ),
+            array( $this, 'render_business_description_field' ),
+            self::PAGE_SLUG,
+            'ai_jsonld_business_section'
+        );
+
+        add_settings_field(
+            'business_logo',
+            __( 'Logo URL', 'ai-jsonld-generator' ),
+            array( $this, 'render_business_logo_field' ),
+            self::PAGE_SLUG,
+            'ai_jsonld_business_section'
+        );
+
+        add_settings_field(
+            'business_email',
+            __( 'Email', 'ai-jsonld-generator' ),
+            array( $this, 'render_business_email_field' ),
+            self::PAGE_SLUG,
+            'ai_jsonld_business_section'
+        );
+
+        add_settings_field(
+            'business_phone',
+            __( 'Phone', 'ai-jsonld-generator' ),
+            array( $this, 'render_business_phone_field' ),
+            self::PAGE_SLUG,
+            'ai_jsonld_business_section'
+        );
+
+        add_settings_field(
+            'business_founding_date',
+            __( 'Founding Date', 'ai-jsonld-generator' ),
+            array( $this, 'render_business_founding_date_field' ),
+            self::PAGE_SLUG,
+            'ai_jsonld_business_section'
+        );
+
+        add_settings_field(
+            'business_social_links',
+            __( 'Social Links', 'ai-jsonld-generator' ),
+            array( $this, 'render_business_social_links_field' ),
+            self::PAGE_SLUG,
+            'ai_jsonld_business_section'
+        );
+
+        add_settings_field(
+            'business_locations',
+            __( 'Locations', 'ai-jsonld-generator' ),
+            array( $this, 'render_business_locations_field' ),
+            self::PAGE_SLUG,
+            'ai_jsonld_business_section'
+        );
+    }
+
+    /**
      * Sanitize settings
      *
      * @param array $input Raw settings input.
@@ -301,8 +380,69 @@ class AI_JSONLD_Admin {
         $sanitized['delete_data_on_uninstall']  = ! empty( $input['delete_data_on_uninstall'] );
         $sanitized['debug_logging']             = ! empty( $input['debug_logging'] );
 
-        // Settings version (preserve or use current)
-        $sanitized['settings_version'] = $current['settings_version'] ?? '1.0';
+        // Business details
+        $sanitized['business_name']         = sanitize_text_field( $input['business_name'] ?? '' );
+        $sanitized['business_description']  = sanitize_textarea_field( $input['business_description'] ?? '' );
+        $sanitized['business_logo']         = esc_url_raw( $input['business_logo'] ?? '' );
+        $sanitized['business_email']        = sanitize_email( $input['business_email'] ?? '' );
+        $sanitized['business_phone']        = sanitize_text_field( $input['business_phone'] ?? '' );
+        $sanitized['business_founding_date'] = sanitize_text_field( $input['business_founding_date'] ?? '' );
+
+        // Social links
+        $sanitized['business_social_links'] = array();
+        if ( ! empty( $input['business_social_links'] ) && is_array( $input['business_social_links'] ) ) {
+            foreach ( $input['business_social_links'] as $platform => $url ) {
+                if ( ! empty( $url ) ) {
+                    $sanitized['business_social_links'][ sanitize_key( $platform ) ] = esc_url_raw( $url );
+                }
+            }
+        }
+
+        // Business locations
+        $sanitized['business_locations'] = array();
+        if ( ! empty( $input['business_locations'] ) && is_array( $input['business_locations'] ) ) {
+            foreach ( $input['business_locations'] as $index => $location ) {
+                // Skip completely empty locations
+                $has_data = ! empty( $location['name'] ) ||
+                            ! empty( $location['street'] ) ||
+                            ! empty( $location['city'] ) ||
+                            ! empty( $location['phone'] ) ||
+                            ! empty( $location['email'] );
+
+                if ( ! $has_data ) {
+                    continue;
+                }
+
+                $sanitized_location = array(
+                    'name'        => sanitize_text_field( $location['name'] ?? '' ),
+                    'street'      => sanitize_text_field( $location['street'] ?? '' ),
+                    'city'        => sanitize_text_field( $location['city'] ?? '' ),
+                    'state'       => sanitize_text_field( $location['state'] ?? '' ),
+                    'postal_code' => sanitize_text_field( $location['postal_code'] ?? '' ),
+                    'country'     => sanitize_text_field( $location['country'] ?? '' ),
+                    'phone'       => sanitize_text_field( $location['phone'] ?? '' ),
+                    'email'       => sanitize_email( $location['email'] ?? '' ),
+                    'hours'       => array(),
+                );
+
+                // Sanitize opening hours
+                $valid_days = array( 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday' );
+                if ( ! empty( $location['hours'] ) && is_array( $location['hours'] ) ) {
+                    foreach ( $valid_days as $day ) {
+                        $sanitized_location['hours'][ $day ] = sanitize_text_field( $location['hours'][ $day ] ?? '' );
+                    }
+                } else {
+                    foreach ( $valid_days as $day ) {
+                        $sanitized_location['hours'][ $day ] = '';
+                    }
+                }
+
+                $sanitized['business_locations'][] = $sanitized_location;
+            }
+        }
+
+        // Settings version - bump when business settings change
+        $sanitized['settings_version'] = '1.1';
 
         return $sanitized;
     }
@@ -413,6 +553,329 @@ class AI_JSONLD_Admin {
      */
     public function render_advanced_section() {
         echo '<p>' . esc_html__( 'Advanced settings for automation and debugging.', 'ai-jsonld-generator' ) . '</p>';
+    }
+
+    /**
+     * Render business section
+     */
+    public function render_business_section() {
+        echo '<p>' . esc_html__( 'Provide your business details to ensure accurate schema generation. This information will be used by the AI to generate precise Organization, LocalBusiness, and ContactPoint schemas.', 'ai-jsonld-generator' ) . '</p>';
+    }
+
+    /**
+     * Render business name field
+     */
+    public function render_business_name_field() {
+        $settings = AI_JSONLD_Generator::get_settings();
+        ?>
+        <input
+            type="text"
+            name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_name]"
+            id="ai_jsonld_business_name"
+            value="<?php echo esc_attr( $settings['business_name'] ?? '' ); ?>"
+            class="regular-text"
+        />
+        <p class="description"><?php esc_html_e( 'Your official business or organization name.', 'ai-jsonld-generator' ); ?></p>
+        <?php
+    }
+
+    /**
+     * Render business description field
+     */
+    public function render_business_description_field() {
+        $settings = AI_JSONLD_Generator::get_settings();
+        ?>
+        <textarea
+            name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_description]"
+            id="ai_jsonld_business_description"
+            rows="3"
+            class="large-text"
+        ><?php echo esc_textarea( $settings['business_description'] ?? '' ); ?></textarea>
+        <p class="description"><?php esc_html_e( 'A brief description of your business or organization.', 'ai-jsonld-generator' ); ?></p>
+        <?php
+    }
+
+    /**
+     * Render business logo field
+     */
+    public function render_business_logo_field() {
+        $settings = AI_JSONLD_Generator::get_settings();
+        ?>
+        <input
+            type="url"
+            name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_logo]"
+            id="ai_jsonld_business_logo"
+            value="<?php echo esc_url( $settings['business_logo'] ?? '' ); ?>"
+            class="regular-text"
+            placeholder="https://"
+        />
+        <p class="description"><?php esc_html_e( 'Full URL to your business logo image.', 'ai-jsonld-generator' ); ?></p>
+        <?php
+    }
+
+    /**
+     * Render business email field
+     */
+    public function render_business_email_field() {
+        $settings = AI_JSONLD_Generator::get_settings();
+        ?>
+        <input
+            type="email"
+            name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_email]"
+            id="ai_jsonld_business_email"
+            value="<?php echo esc_attr( $settings['business_email'] ?? '' ); ?>"
+            class="regular-text"
+        />
+        <p class="description"><?php esc_html_e( 'Primary contact email address.', 'ai-jsonld-generator' ); ?></p>
+        <?php
+    }
+
+    /**
+     * Render business phone field
+     */
+    public function render_business_phone_field() {
+        $settings = AI_JSONLD_Generator::get_settings();
+        ?>
+        <input
+            type="tel"
+            name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_phone]"
+            id="ai_jsonld_business_phone"
+            value="<?php echo esc_attr( $settings['business_phone'] ?? '' ); ?>"
+            class="regular-text"
+            placeholder="+1-234-567-8900"
+        />
+        <p class="description"><?php esc_html_e( 'Primary contact phone number (include country code).', 'ai-jsonld-generator' ); ?></p>
+        <?php
+    }
+
+    /**
+     * Render business founding date field
+     */
+    public function render_business_founding_date_field() {
+        $settings = AI_JSONLD_Generator::get_settings();
+        ?>
+        <input
+            type="date"
+            name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_founding_date]"
+            id="ai_jsonld_business_founding_date"
+            value="<?php echo esc_attr( $settings['business_founding_date'] ?? '' ); ?>"
+            class="regular-text"
+        />
+        <p class="description"><?php esc_html_e( 'When was your business founded?', 'ai-jsonld-generator' ); ?></p>
+        <?php
+    }
+
+    /**
+     * Render business social links field
+     */
+    public function render_business_social_links_field() {
+        $settings     = AI_JSONLD_Generator::get_settings();
+        $social_links = $settings['business_social_links'] ?? array();
+        $platforms    = array(
+            'facebook'  => __( 'Facebook', 'ai-jsonld-generator' ),
+            'twitter'   => __( 'Twitter/X', 'ai-jsonld-generator' ),
+            'linkedin'  => __( 'LinkedIn', 'ai-jsonld-generator' ),
+            'instagram' => __( 'Instagram', 'ai-jsonld-generator' ),
+            'youtube'   => __( 'YouTube', 'ai-jsonld-generator' ),
+            'tiktok'    => __( 'TikTok', 'ai-jsonld-generator' ),
+            'pinterest' => __( 'Pinterest', 'ai-jsonld-generator' ),
+            'github'    => __( 'GitHub', 'ai-jsonld-generator' ),
+        );
+        ?>
+        <div class="ai-jsonld-social-links">
+            <?php foreach ( $platforms as $platform => $label ) : ?>
+                <div class="ai-jsonld-social-link-row">
+                    <label for="ai_jsonld_social_<?php echo esc_attr( $platform ); ?>">
+                        <?php echo esc_html( $label ); ?>
+                    </label>
+                    <input
+                        type="url"
+                        name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_social_links][<?php echo esc_attr( $platform ); ?>]"
+                        id="ai_jsonld_social_<?php echo esc_attr( $platform ); ?>"
+                        value="<?php echo esc_url( $social_links[ $platform ] ?? '' ); ?>"
+                        class="regular-text"
+                        placeholder="https://"
+                    />
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <p class="description"><?php esc_html_e( 'Add your social media profile URLs.', 'ai-jsonld-generator' ); ?></p>
+        <?php
+    }
+
+    /**
+     * Render business locations field
+     */
+    public function render_business_locations_field() {
+        $settings  = AI_JSONLD_Generator::get_settings();
+        $locations = $settings['business_locations'] ?? array();
+
+        // Ensure at least one empty location for the template
+        if ( empty( $locations ) ) {
+            $locations = array( $this->get_empty_location() );
+        }
+
+        $days = array(
+            'monday'    => __( 'Monday', 'ai-jsonld-generator' ),
+            'tuesday'   => __( 'Tuesday', 'ai-jsonld-generator' ),
+            'wednesday' => __( 'Wednesday', 'ai-jsonld-generator' ),
+            'thursday'  => __( 'Thursday', 'ai-jsonld-generator' ),
+            'friday'    => __( 'Friday', 'ai-jsonld-generator' ),
+            'saturday'  => __( 'Saturday', 'ai-jsonld-generator' ),
+            'sunday'    => __( 'Sunday', 'ai-jsonld-generator' ),
+        );
+        ?>
+        <div class="ai-jsonld-locations-wrapper">
+            <div class="ai-jsonld-locations" id="ai-jsonld-locations">
+                <?php foreach ( $locations as $index => $location ) : ?>
+                    <div class="ai-jsonld-location" data-index="<?php echo esc_attr( $index ); ?>">
+                        <div class="ai-jsonld-location-header">
+                            <h4><?php esc_html_e( 'Location', 'ai-jsonld-generator' ); ?> <span class="location-number"><?php echo esc_html( $index + 1 ); ?></span></h4>
+                            <button type="button" class="button ai-jsonld-remove-location" <?php echo count( $locations ) <= 1 ? 'style="display:none;"' : ''; ?>>
+                                <?php esc_html_e( 'Remove', 'ai-jsonld-generator' ); ?>
+                            </button>
+                        </div>
+
+                        <div class="ai-jsonld-location-fields">
+                            <div class="ai-jsonld-field-row">
+                                <label><?php esc_html_e( 'Location Name', 'ai-jsonld-generator' ); ?></label>
+                                <input
+                                    type="text"
+                                    name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_locations][<?php echo esc_attr( $index ); ?>][name]"
+                                    value="<?php echo esc_attr( $location['name'] ?? '' ); ?>"
+                                    class="regular-text"
+                                    placeholder="<?php esc_attr_e( 'e.g., Main Office, Downtown Branch', 'ai-jsonld-generator' ); ?>"
+                                />
+                            </div>
+
+                            <div class="ai-jsonld-field-row">
+                                <label><?php esc_html_e( 'Street Address', 'ai-jsonld-generator' ); ?></label>
+                                <input
+                                    type="text"
+                                    name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_locations][<?php echo esc_attr( $index ); ?>][street]"
+                                    value="<?php echo esc_attr( $location['street'] ?? '' ); ?>"
+                                    class="regular-text"
+                                />
+                            </div>
+
+                            <div class="ai-jsonld-field-row ai-jsonld-field-row-half">
+                                <div>
+                                    <label><?php esc_html_e( 'City', 'ai-jsonld-generator' ); ?></label>
+                                    <input
+                                        type="text"
+                                        name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_locations][<?php echo esc_attr( $index ); ?>][city]"
+                                        value="<?php echo esc_attr( $location['city'] ?? '' ); ?>"
+                                        class="regular-text"
+                                    />
+                                </div>
+                                <div>
+                                    <label><?php esc_html_e( 'State/Province', 'ai-jsonld-generator' ); ?></label>
+                                    <input
+                                        type="text"
+                                        name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_locations][<?php echo esc_attr( $index ); ?>][state]"
+                                        value="<?php echo esc_attr( $location['state'] ?? '' ); ?>"
+                                        class="regular-text"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="ai-jsonld-field-row ai-jsonld-field-row-half">
+                                <div>
+                                    <label><?php esc_html_e( 'Postal Code', 'ai-jsonld-generator' ); ?></label>
+                                    <input
+                                        type="text"
+                                        name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_locations][<?php echo esc_attr( $index ); ?>][postal_code]"
+                                        value="<?php echo esc_attr( $location['postal_code'] ?? '' ); ?>"
+                                        class="regular-text"
+                                    />
+                                </div>
+                                <div>
+                                    <label><?php esc_html_e( 'Country', 'ai-jsonld-generator' ); ?></label>
+                                    <input
+                                        type="text"
+                                        name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_locations][<?php echo esc_attr( $index ); ?>][country]"
+                                        value="<?php echo esc_attr( $location['country'] ?? '' ); ?>"
+                                        class="regular-text"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="ai-jsonld-field-row ai-jsonld-field-row-half">
+                                <div>
+                                    <label><?php esc_html_e( 'Phone', 'ai-jsonld-generator' ); ?></label>
+                                    <input
+                                        type="tel"
+                                        name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_locations][<?php echo esc_attr( $index ); ?>][phone]"
+                                        value="<?php echo esc_attr( $location['phone'] ?? '' ); ?>"
+                                        class="regular-text"
+                                    />
+                                </div>
+                                <div>
+                                    <label><?php esc_html_e( 'Email', 'ai-jsonld-generator' ); ?></label>
+                                    <input
+                                        type="email"
+                                        name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_locations][<?php echo esc_attr( $index ); ?>][email]"
+                                        value="<?php echo esc_attr( $location['email'] ?? '' ); ?>"
+                                        class="regular-text"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="ai-jsonld-field-row">
+                                <label><?php esc_html_e( 'Opening Hours', 'ai-jsonld-generator' ); ?></label>
+                                <div class="ai-jsonld-opening-hours">
+                                    <?php foreach ( $days as $day_key => $day_label ) : ?>
+                                        <div class="ai-jsonld-hours-row">
+                                            <span class="day-label"><?php echo esc_html( $day_label ); ?></span>
+                                            <input
+                                                type="text"
+                                                name="<?php echo esc_attr( self::OPTION_NAME ); ?>[business_locations][<?php echo esc_attr( $index ); ?>][hours][<?php echo esc_attr( $day_key ); ?>]"
+                                                value="<?php echo esc_attr( $location['hours'][ $day_key ] ?? '' ); ?>"
+                                                class="small-text"
+                                                placeholder="<?php esc_attr_e( '09:00-17:00 or Closed', 'ai-jsonld-generator' ); ?>"
+                                            />
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+
+            <button type="button" class="button button-secondary" id="ai-jsonld-add-location">
+                <?php esc_html_e( '+ Add Location', 'ai-jsonld-generator' ); ?>
+            </button>
+        </div>
+        <p class="description"><?php esc_html_e( 'Add one or more business locations with address and opening hours.', 'ai-jsonld-generator' ); ?></p>
+        <?php
+    }
+
+    /**
+     * Get empty location template
+     *
+     * @return array Empty location structure.
+     */
+    private function get_empty_location(): array {
+        return array(
+            'name'        => '',
+            'street'      => '',
+            'city'        => '',
+            'state'       => '',
+            'postal_code' => '',
+            'country'     => '',
+            'phone'       => '',
+            'email'       => '',
+            'hours'       => array(
+                'monday'    => '',
+                'tuesday'   => '',
+                'wednesday' => '',
+                'thursday'  => '',
+                'friday'    => '',
+                'saturday'  => '',
+                'sunday'    => '',
+            ),
+        );
     }
 
     /**

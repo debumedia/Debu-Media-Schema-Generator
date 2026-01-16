@@ -8,7 +8,7 @@ This is a WordPress plugin called "AI JSON-LD Generator" that automatically gene
 - **Name:** AI JSON-LD Generator
 - **Slug:** `ai-jsonld-generator`
 - **Text Domain:** `ai-jsonld-generator`
-- **Version:** 1.1.1
+- **Version:** 1.2.0
 
 ## Core Functionality
 
@@ -85,7 +85,36 @@ Key settings include:
 - `skip_if_schema_exists`: false (SEO plugin compatibility)
 - `delete_data_on_uninstall`: false
 - `debug_logging`: false
-- `settings_version`: '1.0' (for cache invalidation)
+- `settings_version`: '1.1' (for cache invalidation)
+
+**Business Details (v1.2.0+):**
+- `business_name`: Organization/business name
+- `business_description`: Brief business description
+- `business_logo`: URL to logo image
+- `business_email`: Primary contact email
+- `business_phone`: Primary contact phone (with country code)
+- `business_founding_date`: When the business was founded
+- `business_social_links`: Array of platform => URL pairs
+- `business_locations`: Array of location objects (see below)
+
+**Location Structure:**
+```php
+[
+    'name'        => 'Main Office',
+    'street'      => '123 Main St',
+    'city'        => 'New York',
+    'state'       => 'NY',
+    'postal_code' => '10001',
+    'country'     => 'USA',
+    'phone'       => '+1-234-567-8900',
+    'email'       => 'office@example.com',
+    'hours'       => [
+        'monday'    => '09:00-17:00',
+        'tuesday'   => '09:00-17:00',
+        // ... other days
+    ]
+]
+```
 
 ### Post Meta
 - `_ai_jsonld_schema`: Generated JSON-LD string
@@ -183,6 +212,82 @@ The LLM is guided to use linked entities:
   "@graph": [
     {"@type": "Organization", "@id": "#organization", "name": "..."},
     {"@type": "Service", "provider": {"@id": "#organization"}}
+  ]
+}
+```
+
+## Business Details (v1.2.0+)
+
+The plugin allows site owners to provide verified business information that takes precedence over content extracted by the LLM. This ensures accurate Organization, LocalBusiness, and ContactPoint schemas.
+
+### Configuration
+
+In **Settings → AI JSON-LD → Business Details**:
+
+**Basic Information:**
+- Business/Organization Name
+- Description
+- Logo URL
+- Primary Email
+- Primary Phone (with country code)
+- Founding Date
+
+**Social Links:**
+Pre-defined fields for major platforms:
+- Facebook, Twitter/X, LinkedIn, Instagram
+- YouTube, TikTok, Pinterest, GitHub
+
+**Locations (Repeater):**
+Support for multiple business locations, each with:
+- Location name (e.g., "Main Office", "Downtown Branch")
+- Full address (street, city, state, postal code, country)
+- Location-specific phone and email
+- Opening hours for each day of the week
+
+### How It Works
+
+1. Business data is configured once in plugin settings (global)
+2. When generating schema, the data is passed to the LLM as `BUSINESS DATA`
+3. The LLM is instructed to use this verified data for Organization/LocalBusiness schemas
+4. Business data takes precedence over information extracted from page content
+
+### Example Output
+
+With business details configured, the generated schema includes:
+
+```json
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "#organization",
+      "name": "Acme Corp",
+      "description": "Leading provider of widgets",
+      "logo": "https://example.com/logo.png",
+      "email": "info@example.com",
+      "telephone": "+1-234-567-8900",
+      "foundingDate": "2010-01-15",
+      "sameAs": [
+        "https://facebook.com/acme",
+        "https://linkedin.com/company/acme"
+      ]
+    },
+    {
+      "@type": "LocalBusiness",
+      "@id": "#location-main",
+      "name": "Acme Corp - Main Office",
+      "parentOrganization": {"@id": "#organization"},
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "123 Main St",
+        "addressLocality": "New York",
+        "addressRegion": "NY",
+        "postalCode": "10001",
+        "addressCountry": "USA"
+      },
+      "openingHoursSpecification": [...]
+    }
   ]
 }
 ```
@@ -418,7 +523,7 @@ do_action('ai_jsonld_regenerate', $post_id);
 
 ## Current Status
 
-**Version 1.1.1** - Plugin is fully implemented and functional.
+**Version 1.2.0** - Plugin is fully implemented and functional.
 
 ### Implemented Features:
 - DeepSeek LLM integration with comprehensive prompts
@@ -430,3 +535,8 @@ do_action('ai_jsonld_regenerate', $post_id);
 - Rate limiting and retry logic
 - SEO plugin conflict detection
 - Frontend schema output in `<head>`
+- **Business Details configuration** (v1.2.0):
+  - Structured fields for organization info
+  - Multiple location support with addresses and hours
+  - Social media profile links
+  - Business data takes precedence in schema generation

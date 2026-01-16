@@ -3,7 +3,7 @@
  * Plugin Name: AI JSON-LD Generator
  * Plugin URI: https://example.com/ai-jsonld-generator
  * Description: Automatically generates schema.org JSON-LD structured data for WordPress pages using AI (DeepSeek).
- * Version: 1.1.1
+ * Version: 1.2.0
  * Author: Debu Media
  * Author URI: https://example.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Plugin constants
-define( 'AI_JSONLD_VERSION', '1.1.1' );
+define( 'AI_JSONLD_VERSION', '1.2.0' );
 define( 'AI_JSONLD_PLUGIN_FILE', __FILE__ );
 define( 'AI_JSONLD_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AI_JSONLD_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -196,19 +196,38 @@ final class AI_JSONLD_Generator {
      */
     public function get_default_settings() {
         return array(
+            // Provider settings
             'provider'                   => 'deepseek',
             'deepseek_api_key'           => '',
             'deepseek_model'             => 'deepseek-chat',
+
+            // Generation settings
             'temperature'                => 0.2,
             'max_tokens'                 => 8000,
             'max_content_chars'          => 50000,
+
+            // Output settings
             'output_location'            => 'head',
             'enabled_post_types'         => array( 'page' ),
+
+            // Business details
+            'business_name'              => '',
+            'business_description'       => '',
+            'business_logo'              => '',
+            'business_email'             => '',
+            'business_phone'             => '',
+            'business_founding_date'     => '',
+            'business_social_links'      => array(),
+            'business_locations'         => array(),
+
+            // Behavior settings
             'auto_regenerate_on_update'  => false,
             'skip_if_schema_exists'      => false,
             'delete_data_on_uninstall'   => false,
             'debug_logging'              => false,
-            'settings_version'           => '1.0',
+
+            // Internal
+            'settings_version'           => '1.1',
         );
     }
 
@@ -245,19 +264,38 @@ final class AI_JSONLD_Generator {
      */
     public static function get_settings() {
         $defaults = array(
+            // Provider settings
             'provider'                   => 'deepseek',
             'deepseek_api_key'           => '',
             'deepseek_model'             => 'deepseek-chat',
+
+            // Generation settings
             'temperature'                => 0.2,
             'max_tokens'                 => 8000,
             'max_content_chars'          => 50000,
+
+            // Output settings
             'output_location'            => 'head',
             'enabled_post_types'         => array( 'page' ),
+
+            // Business details
+            'business_name'              => '',
+            'business_description'       => '',
+            'business_logo'              => '',
+            'business_email'             => '',
+            'business_phone'             => '',
+            'business_founding_date'     => '',
+            'business_social_links'      => array(),
+            'business_locations'         => array(),
+
+            // Behavior settings
             'auto_regenerate_on_update'  => false,
             'skip_if_schema_exists'      => false,
             'delete_data_on_uninstall'   => false,
             'debug_logging'              => false,
-            'settings_version'           => '1.0',
+
+            // Internal
+            'settings_version'           => '1.1',
         );
 
         $settings = get_option( 'ai_jsonld_settings', array() );
