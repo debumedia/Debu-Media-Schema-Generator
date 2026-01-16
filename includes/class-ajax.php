@@ -198,18 +198,31 @@ class WP_AI_Schema_Ajax {
             );
         }
 
-        // Check API key
-        $api_key = $this->encryption->decrypt( $settings['deepseek_api_key'] ?? '' );
+        // Get the model being used for this provider
+        $provider_slug = $provider->get_slug();
+        $model_key     = $provider_slug . '_model';
+        $model         = $settings[ $model_key ] ?? '';
+
+        // Check API key for the active provider
+        $api_key_field = $provider_slug . '_api_key';
+        $api_key       = $this->encryption->decrypt( $settings[ $api_key_field ] ?? '' );
         if ( empty( $api_key ) ) {
             $this->save_error( $post_id, __( 'API key not configured.', 'wp-ai-seo-schema-generator' ) );
             return array(
                 'success' => false,
-                'message' => __( 'API key is not configured. Please configure it in Settings.', 'wp-ai-seo-schema-generator' ),
+                'message' => sprintf(
+                    /* translators: %s: provider name */
+                    __( '%s API key is not configured. Please configure it in Settings.', 'wp-ai-seo-schema-generator' ),
+                    $provider->get_name()
+                ),
             );
         }
 
-        // Build payload
-        $payload = $this->prompt_builder->build_payload( $post_id, $settings );
+        // Get max content chars from provider's model config
+        $max_content_chars = $provider->get_max_content_chars( $model );
+
+        // Build payload with provider-specific content limit
+        $payload = $this->prompt_builder->build_payload( $post_id, $settings, $max_content_chars );
 
         if ( empty( $payload ) ) {
             $this->save_error( $post_id, __( 'Failed to build prompt payload.', 'wp-ai-seo-schema-generator' ) );

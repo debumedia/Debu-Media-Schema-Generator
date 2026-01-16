@@ -1,6 +1,6 @@
 <?php
 /**
- * DeepSeek provider class
+ * OpenAI provider class
  *
  * @package WP_AI_Schema_Generator
  */
@@ -11,34 +11,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * DeepSeek LLM provider implementation
+ * OpenAI LLM provider implementation
  */
-class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
+class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
 
     /**
      * API endpoint
      */
-    const API_ENDPOINT = 'https://api.deepseek.com/v1/chat/completions';
+    const API_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
     /**
      * Default model
      */
-    const DEFAULT_MODEL = 'deepseek-chat';
-
-    /**
-     * Context window size (total input + output tokens)
-     */
-    const CONTEXT_WINDOW = 64000;
-
-    /**
-     * Maximum output tokens supported by model
-     */
-    const MAX_OUTPUT_TOKENS = 8192;
+    const DEFAULT_MODEL = 'gpt-5-nano';
 
     /**
      * Minimum output tokens to ensure useful response
+     * Note: gpt-5-nano is a reasoning model that uses ~1700+ tokens for internal
+     * reasoning before producing output. We need at least 4000 to ensure useful output.
      */
-    const MIN_OUTPUT_TOKENS = 1000;
+    const MIN_OUTPUT_TOKENS = 4000;
 
     /**
      * Safety buffer for token estimation (tokens reserved)
@@ -46,12 +38,37 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
     const TOKEN_SAFETY_BUFFER = 2000;
 
     /**
+     * ==========================================================================
+     * MODEL CONFIGURATION - Edit these values to change limits per model
+     * ==========================================================================
+     *
+     * Each model defines:
+     *   - name: Display name in admin UI
+     *   - context_window: Total tokens (input + output) the model supports
+     *   - max_output: Maximum output tokens the model can generate (hard limit)
+     *   - max_content_chars: Maximum page content characters to send
+     *
+     * We always request max_output tokens - the calculate_safe_max_tokens()
+     * function will reduce this only if the input is large enough to need it.
+     *
+     * To add a new model, add an entry to this array.
+     */
+    const MODELS = array(
+        'gpt-5-nano' => array(
+            'name'              => 'GPT-5 Nano',
+            'context_window'    => 400000,   // 400K total (272K input + 128K output)
+            'max_output'        => 128000,   // Model's hard max output limit
+            'max_content_chars' => 200000,   // ~57K tokens, well under 272K input limit
+        ),
+    );
+
+    /**
      * Get provider name
      *
      * @return string
      */
     public function get_name(): string {
-        return 'DeepSeek';
+        return 'OpenAI';
     }
 
     /**
@@ -60,7 +77,50 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
      * @return string
      */
     public function get_slug(): string {
-        return 'deepseek';
+        return 'openai';
+    }
+
+    /**
+     * Get available models for this provider
+     *
+     * @return array
+     */
+    public function get_models(): array {
+        return self::MODELS;
+    }
+
+    /**
+     * Get model configuration
+     *
+     * @param string $model Model ID.
+     * @return array Model config.
+     */
+    public function get_model_config( string $model ): array {
+        return self::MODELS[ $model ] ?? self::MODELS[ self::DEFAULT_MODEL ];
+    }
+
+    /**
+     * Get max tokens for a model (returns the model's hard max_output limit)
+     *
+     * @param string $model Model ID.
+     * @return int Max tokens.
+     */
+    public function get_max_tokens( string $model = '' ): int {
+        $model  = $model ?: self::DEFAULT_MODEL;
+        $config = $this->get_model_config( $model );
+        return $config['max_output'] ?? 128000;
+    }
+
+    /**
+     * Get max content chars for a model
+     *
+     * @param string $model Model ID.
+     * @return int Max content chars.
+     */
+    public function get_max_content_chars( string $model = '' ): int {
+        $model  = $model ?: self::DEFAULT_MODEL;
+        $config = $this->get_model_config( $model );
+        return $config['max_content_chars'] ?? 150000;
     }
 
     /**
@@ -88,31 +148,35 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
         }
 
         // Get API key
-        $api_key = $this->get_api_key( $settings, 'deepseek_api_key' );
+        $api_key = $this->get_api_key( $settings, 'openai_api_key' );
 
         if ( empty( $api_key ) ) {
             return array(
                 'success'     => false,
                 'schema'      => '',
                 'status_code' => 0,
-                'error'       => __( 'DeepSeek API key is not configured.', 'wp-ai-seo-schema-generator' ),
+                'error'       => __( 'OpenAI API key is not configured.', 'wp-ai-seo-schema-generator' ),
                 'headers'     => array(),
             );
         }
 
+        // Get model and its configuration
+        $model        = $settings['openai_model'] ?? self::DEFAULT_MODEL;
+        $model_config = $this->get_model_config( $model );
+
         // Build messages
         $messages = $this->build_messages( $payload );
 
-        // Calculate safe max_tokens based on input size
-        $requested_max_tokens = intval( $settings['max_tokens'] ?? 8000 );
-        $safe_max_tokens      = $this->calculate_safe_max_tokens( $messages, $requested_max_tokens );
+        // Calculate safe max_tokens based on input size and model limits
+        // We request the model's full max_output - calculate_safe_max_tokens will reduce only if needed
+        $safe_max_tokens = $this->calculate_safe_max_tokens( $messages, $model_config['max_output'], $model );
 
-        // Build request body
+        // Build request body (OpenAI uses max_completion_tokens instead of max_tokens)
+        // Note: gpt-5-nano doesn't support custom temperature, only default (1)
         $body = array(
-            'model'       => $settings['deepseek_model'] ?? self::DEFAULT_MODEL,
-            'messages'    => $messages,
-            'temperature' => floatval( $settings['temperature'] ?? 0.2 ),
-            'max_tokens'  => $safe_max_tokens,
+            'model'                 => $model,
+            'messages'              => $messages,
+            'max_completion_tokens' => $safe_max_tokens,
         );
 
         // Make request
@@ -123,7 +187,7 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
                 'Authorization' => 'Bearer ' . $api_key,
             ),
             $body,
-            60 // 60 second timeout for generation
+            120 // 120 second timeout for generation
         );
 
         if ( ! $response['success'] ) {
@@ -147,7 +211,7 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
      * @return array Response array.
      */
     public function test_connection( array $settings ): array {
-        $api_key = $this->get_api_key( $settings, 'deepseek_api_key' );
+        $api_key = $this->get_api_key( $settings, 'openai_api_key' );
 
         if ( empty( $api_key ) ) {
             return array(
@@ -158,16 +222,17 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
         }
 
         // Make a minimal request to test the connection
+        // Note: gpt-5-nano is a reasoning model - it needs enough tokens for both
+        // internal reasoning AND output. 500 tokens allows ~64 reasoning + output.
         $body = array(
-            'model'       => $settings['deepseek_model'] ?? self::DEFAULT_MODEL,
-            'messages'    => array(
+            'model'                 => $settings['openai_model'] ?? self::DEFAULT_MODEL,
+            'messages'              => array(
                 array(
                     'role'    => 'user',
                     'content' => 'Say "OK" and nothing else.',
                 ),
             ),
-            'max_tokens'  => 10,
-            'temperature' => 0,
+            'max_completion_tokens' => 500,
         );
 
         $response = $this->make_request(
@@ -202,19 +267,33 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
      */
     public function get_settings_fields(): array {
         return array(
-            'deepseek_api_key' => array(
+            'openai_api_key' => array(
                 'label'       => __( 'API Key', 'wp-ai-seo-schema-generator' ),
                 'type'        => 'password',
-                'description' => __( 'Your DeepSeek API key.', 'wp-ai-seo-schema-generator' ),
+                'description' => __( 'Your OpenAI API key.', 'wp-ai-seo-schema-generator' ),
                 'required'    => true,
             ),
-            'deepseek_model' => array(
+            'openai_model' => array(
                 'label'       => __( 'Model', 'wp-ai-seo-schema-generator' ),
-                'type'        => 'text',
+                'type'        => 'select',
+                'options'     => $this->get_model_options(),
                 'default'     => self::DEFAULT_MODEL,
-                'description' => __( 'The DeepSeek model to use.', 'wp-ai-seo-schema-generator' ),
+                'description' => __( 'The OpenAI model to use.', 'wp-ai-seo-schema-generator' ),
             ),
         );
+    }
+
+    /**
+     * Get model options for select field
+     *
+     * @return array
+     */
+    private function get_model_options(): array {
+        $options = array();
+        foreach ( self::MODELS as $id => $model ) {
+            $options[ $id ] = $model['name'];
+        }
+        return $options;
     }
 
     /**
@@ -438,23 +517,25 @@ BUSINESS DATA (use this verified information for Organization/LocalBusiness sche
     /**
      * Calculate safe max_tokens based on input size
      *
-     * Ensures we don't exceed the context window by dynamically
-     * adjusting output tokens based on input token estimate.
-     *
-     * @param array $messages   The messages array to be sent.
-     * @param int   $requested  The requested max_tokens from settings.
+     * @param array  $messages   The messages array to be sent.
+     * @param int    $requested  The requested max_tokens from model config.
+     * @param string $model      The model being used.
      * @return int Safe max_tokens value.
      */
-    private function calculate_safe_max_tokens( array $messages, int $requested ): int {
+    private function calculate_safe_max_tokens( array $messages, int $requested, string $model ): int {
+        // Get model-specific limits
+        $model_config   = $this->get_model_config( $model );
+        $context_window = $model_config['context_window'];
+        $max_output     = $model_config['max_output'];
+
         // Estimate input tokens
         $input_tokens = $this->estimate_tokens( $messages );
 
         // Calculate available tokens for output
-        $available = self::CONTEXT_WINDOW - $input_tokens - self::TOKEN_SAFETY_BUFFER;
+        $available = $context_window - $input_tokens - self::TOKEN_SAFETY_BUFFER;
 
         // Ensure we have at least minimum tokens for a useful response
         if ( $available < self::MIN_OUTPUT_TOKENS ) {
-            // Log warning if debug enabled
             WP_AI_Schema_Generator::log(
                 sprintf(
                     'Input too large: ~%d tokens estimated, only %d available for output',
@@ -467,16 +548,13 @@ BUSINESS DATA (use this verified information for Organization/LocalBusiness sche
         }
 
         // Cap at model's maximum output and requested amount
-        $max_allowed = min( self::MAX_OUTPUT_TOKENS, $available );
+        $max_allowed = min( $max_output, $available );
 
         return min( $requested, $max_allowed );
     }
 
     /**
      * Estimate token count for messages
-     *
-     * Uses a rough estimate of ~4 characters per token for English text.
-     * This is conservative to avoid underestimating.
      *
      * @param array $messages Messages array.
      * @return int Estimated token count.
@@ -493,7 +571,6 @@ BUSINESS DATA (use this verified information for Organization/LocalBusiness sche
         }
 
         // Estimate: ~4 characters per token (conservative for mixed content)
-        // JSON and code tend to have more tokens per character
         return (int) ceil( $total_chars / 3.5 );
     }
 }

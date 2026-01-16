@@ -242,6 +242,8 @@ class WP_AI_Schema_Content_Processor {
     /**
      * Generate a content hash for caching
      *
+     * Hash includes provider and model so cache is invalidated when switching providers.
+     *
      * @param int   $post_id  Post ID.
      * @param array $settings Plugin settings.
      * @return string SHA256 hash.
@@ -255,6 +257,11 @@ class WP_AI_Schema_Content_Processor {
 
         $type_hint = get_post_meta( $post_id, '_wp_ai_schema_type_hint', true );
 
+        // Include provider and model in hash so cache invalidates when switching
+        $provider    = $settings['provider'] ?? 'deepseek';
+        $model_key   = $provider . '_model';
+        $model       = $settings[ $model_key ] ?? '';
+
         $hash_input = wp_json_encode(
             array(
                 'content'          => $post->post_content,
@@ -262,7 +269,8 @@ class WP_AI_Schema_Content_Processor {
                 'excerpt'          => $post->post_excerpt,
                 'modified'         => $post->post_modified,
                 'settings_version' => $settings['settings_version'] ?? '1.0',
-                'max_content_chars' => $settings['max_content_chars'] ?? self::DEFAULT_MAX_CHARS,
+                'provider'         => $provider,
+                'model'            => $model,
                 'type_hint'        => $type_hint ?: 'auto',
             )
         );

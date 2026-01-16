@@ -7,6 +7,17 @@
 
     var cooldownTimer = null;
     var cooldownRemaining = 0;
+    var progressTimer = null;
+    var progressStep = 0;
+
+    /**
+     * Progress steps for visual feedback (while waiting for API)
+     */
+    var progressSteps = [
+        { text: 'preparing', delay: 0 },
+        { text: 'sending', delay: 1500 },
+        { text: 'waiting', delay: 4000 }
+    ];
 
     /**
      * Initialize metabox functionality
@@ -28,6 +39,65 @@
     }
 
     /**
+     * Start progress indicator
+     */
+    function startProgress() {
+        var $button = $('#wp_ai_schema_generate');
+        progressStep = 0;
+
+        // Clear any existing timer
+        if (progressTimer) {
+            clearTimeout(progressTimer);
+        }
+
+        // Show first step immediately
+        updateProgressText();
+
+        // Schedule subsequent steps
+        scheduleNextStep();
+    }
+
+    /**
+     * Schedule the next progress step
+     */
+    function scheduleNextStep() {
+        if (progressStep >= progressSteps.length - 1) {
+            return; // Stay on last step until complete
+        }
+
+        var nextStep = progressSteps[progressStep + 1];
+        var currentStep = progressSteps[progressStep];
+        var delay = nextStep.delay - currentStep.delay;
+
+        progressTimer = setTimeout(function() {
+            progressStep++;
+            updateProgressText();
+            scheduleNextStep();
+        }, delay);
+    }
+
+    /**
+     * Update button text based on current progress step
+     */
+    function updateProgressText() {
+        var $button = $('#wp_ai_schema_generate');
+        var step = progressSteps[progressStep];
+        var text = wpAiSchemaMetabox.i18n[step.text] || step.text;
+        $button.text(text);
+    }
+
+    /**
+     * Stop progress indicator
+     */
+    function stopProgress() {
+        if (progressTimer) {
+            clearTimeout(progressTimer);
+            progressTimer = null;
+        }
+        progressStep = 0;
+    }
+
+    /**
      * Generate schema via AJAX
      */
     function generateSchema() {
@@ -41,14 +111,18 @@
         var forceRegenerate = $('#wp_ai_schema_force_regenerate').is(':checked');
 
         // Disable button and show loading state
-        $button.prop('disabled', true).addClass('generating').text(wpAiSchemaMetabox.i18n.generating);
+        $button.prop('disabled', true).addClass('generating');
         $spinner.addClass('is-active');
         $message.removeClass('success error info').addClass('hidden');
+
+        // Start progress indicator
+        startProgress();
 
         // Make AJAX request
         $.ajax({
             url: wpAiSchemaMetabox.ajax_url,
             type: 'POST',
+            timeout: 150000, // 150 second timeout (2.5 minutes)
             data: {
                 action: 'wp_ai_schema_generate',
                 nonce: wpAiSchemaMetabox.nonce,
@@ -57,7 +131,13 @@
                 force: forceRegenerate ? 1 : 0
             },
             success: function(response) {
+                // Stop the waiting progress
+                stopProgress();
+
                 if (response.success) {
+                    // Show "Processing schema..." while we update the UI
+                    $button.text(wpAiSchemaMetabox.i18n.processing);
+
                     // Update preview
                     var schema = response.data.schema;
                     try {
@@ -86,11 +166,20 @@
                 }
             },
             error: function(xhr, status, error) {
-                showMessage('error', wpAiSchemaMetabox.i18n.error + ': ' + error);
+                var errorMsg = wpAiSchemaMetabox.i18n.error;
+                if (status === 'timeout') {
+                    errorMsg = wpAiSchemaMetabox.i18n.timeout || 'Request timed out. The AI may be busy - please try again.';
+                } else if (error) {
+                    errorMsg += ': ' + error;
+                }
+                showMessage('error', errorMsg);
             },
             complete: function() {
-                $button.removeClass('generating').text(wpAiSchemaMetabox.i18n.generate);
+                // Ensure progress is stopped (in case of error)
+                stopProgress();
+
                 $spinner.removeClass('is-active');
+                $button.removeClass('generating').text(wpAiSchemaMetabox.i18n.generate);
 
                 // Re-enable button after cooldown
                 startCooldown();
@@ -174,17 +263,17 @@
         var statusHtml = '';
 
         if (isCurrent) {
-            statusHtml += '<span class="wp-ai-schema-status-label wp-ai-schema-status-current">' +
+            statusHtml += '<span class="ai-jsonld-status-label ai-jsonld-status-current">' +
                 wpAiSchemaMetabox.i18n.schema_current + '</span>';
         } else {
-            statusHtml += '<span class="wp-ai-schema-status-label wp-ai-schema-status-outdated">' +
+            statusHtml += '<span class="ai-jsonld-status-label ai-jsonld-status-outdated">' +
                 wpAiSchemaMetabox.i18n.schema_outdated + '</span>';
         }
 
         if (generatedAt) {
             var date = new Date(generatedAt * 1000);
             var formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-            statusHtml += '<span class="wp-ai-schema-generated-time">Last generated: ' + formattedDate + '</span>';
+            statusHtml += '<span class="ai-jsonld-generated-time">Last generated: ' + formattedDate + '</span>';
         }
 
         $status.html(statusHtml);

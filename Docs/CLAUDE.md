@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-This is a WordPress plugin called "WP AI SEO Schema Generator" that automatically generates schema.org JSON-LD structured data for WordPress pages using AI (LLM providers starting with DeepSeek).
+This is a WordPress plugin called "WP AI SEO Schema Generator" that automatically generates schema.org JSON-LD structured data for WordPress pages using AI (supports DeepSeek and OpenAI providers).
 
 **Plugin Details:**
 - **Name:** WP AI SEO Schema Generator
 - **Slug:** `wp-ai-seo-schema-generator`
 - **Text Domain:** `wp-ai-seo-schema-generator`
-- **Version:** 1.2.0
+- **Version:** 1.3.0
 
 ## Core Functionality
 
@@ -40,8 +40,9 @@ wp-ai-seo-schema-generator/
 ├── providers/
 │   ├── interface-provider.php       # Provider contract
 │   ├── class-provider-registry.php  # Provider management
-│   ├── class-deepseek-provider.php  # DeepSeek implementation with dynamic token management
-│   └── class-abstract-provider.php  # Shared functionality (HTTP, retry logic)
+│   ├── class-abstract-provider.php  # Shared functionality (HTTP, retry logic)
+│   ├── class-deepseek-provider.php  # DeepSeek implementation
+│   └── class-openai-provider.php    # OpenAI implementation (gpt-5-nano)
 └── assets/
     ├── js/
     │   ├── admin.js
@@ -55,8 +56,9 @@ wp-ai-seo-schema-generator/
 
 **Provider Abstraction:**
 - Interface-based design for multiple LLM providers
-- v1 implements DeepSeek only
-- Easy to add OpenAI, Anthropic, etc. later
+- Supported providers: DeepSeek, OpenAI (gpt-5-nano)
+- Per-model configuration for token limits
+- Easy to add more providers (Anthropic, etc.)
 
 **Caching Strategy:**
 - Content hash (SHA256) based on post content, title, excerpt, modified date, settings version
@@ -73,12 +75,12 @@ wp-ai-seo-schema-generator/
 
 ### Settings (wp_options: 'wp_ai_schema_settings')
 Key settings include:
-- `provider`: 'deepseek' (v1)
+- `provider`: 'deepseek' | 'openai'
 - `deepseek_api_key`: encrypted string
 - `deepseek_model`: 'deepseek-chat'
-- `temperature`: 0.2
-- `max_tokens`: 8000 (maximum output tokens for schema)
-- `max_content_chars`: 50000 (maximum page content to process)
+- `openai_api_key`: encrypted string
+- `openai_model`: 'gpt-5-nano'
+- `temperature`: 0.2 (DeepSeek only; OpenAI gpt-5-nano doesn't support custom temperature)
 - `output_location`: 'head' | 'after_content'
 - `enabled_post_types`: ['page']
 - `auto_regenerate_on_update`: false
@@ -86,6 +88,8 @@ Key settings include:
 - `delete_data_on_uninstall`: false
 - `debug_logging`: false
 - `settings_version`: '1.1' (for cache invalidation)
+
+**Note:** Token limits (max_tokens, max_content_chars) are now per-model constants defined in each provider class, not user-configurable settings.
 
 **Business Details (v1.2.0+):**
 - `business_name`: Organization/business name
@@ -424,10 +428,45 @@ When implementing, ensure:
 - Model: deepseek-chat
 - Authentication: Bearer token in header
 - Request format: OpenAI-compatible
+- Supports: temperature parameter
+
+**OpenAI API:**
+- Endpoint: https://api.openai.com/v1/chat/completions
+- Model: gpt-5-nano
+- Authentication: Bearer token in header
+- Uses `max_completion_tokens` (not `max_tokens`)
+- Note: gpt-5-nano is a reasoning model (uses internal reasoning tokens)
+- Note: Does NOT support temperature parameter (only default of 1)
 
 ## Token Management
 
-Understanding how tokens work is important for configuring the plugin correctly.
+Understanding how tokens work is important for the plugin's architecture.
+
+### Per-Model Configuration (v1.3.0+)
+
+Token limits are now defined per-model in each provider class. This allows optimal configuration for each model's capabilities.
+
+**To modify limits**, edit the `MODELS` constant in the provider class:
+- DeepSeek: `providers/class-deepseek-provider.php`
+- OpenAI: `providers/class-openai-provider.php`
+
+```php
+const MODELS = array(
+    'model-name' => array(
+        'name'              => 'Display Name',
+        'context_window'    => 65536,    // Total context (input + output)
+        'max_output'        => 8000,     // Model's hard max output limit
+        'max_content_chars' => 50000,    // Max page content to send
+    ),
+);
+```
+
+### Model Specifications (Researched)
+
+| Model | Context Window | Max Output | Max Content Chars |
+|-------|---------------|------------|-------------------|
+| **deepseek-chat** | 65,536 | 8,000 | 50,000 |
+| **gpt-5-nano** | 400,000 | 128,000 | 200,000 |
 
 ### Token Types
 
@@ -439,62 +478,46 @@ Understanding how tokens work is important for configuring the plugin correctly.
 
 2. **Output Tokens** - What the LLM returns:
    - The generated JSON-LD schema
-   - Controlled by `max_tokens` setting
-
-### Context Window
-
-DeepSeek-chat has a **64,000 token context window**. This is the total limit for input + output combined.
-
-```
-Context Window (64K) = Input Tokens + Output Tokens
-```
-
-### Settings
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `max_tokens` | 8000 | Maximum tokens for LLM response (JSON-LD output) |
-| `max_content_chars` | 50000 | Maximum characters of page content to process |
+   - For reasoning models (gpt-5-nano): includes internal reasoning tokens
 
 ### Dynamic Token Calculation
 
-The plugin automatically calculates safe output tokens to prevent exceeding the context window:
+The plugin requests the model's full `max_output` and calculates safe limits:
 
 ```
-Available Output = Context Window (64K) - Input Tokens - Safety Buffer (2K)
-Actual Max Tokens = min(requested_max_tokens, available_output, model_max_8192)
+Available Output = Context Window - Input Tokens - Safety Buffer (2K)
+Actual Max Tokens = min(max_output, available_output)
 ```
 
 **Token Estimation:**
 - ~3.5 characters per token (conservative for mixed content)
 - 50,000 chars ≈ ~14,000 tokens
 
-**Example Calculation:**
-- System prompt + reference: ~3,000 tokens
-- Page content (30K chars): ~8,500 tokens
-- Overhead: ~500 tokens
-- **Total input: ~12,000 tokens**
-- **Available for output: 64,000 - 12,000 - 2,000 = 50,000 tokens**
-- **Actual max_tokens: min(8000, 50000, 8192) = 8000**
+### Reasoning Model Support (OpenAI gpt-5-nano)
+
+OpenAI's gpt-5-nano is a reasoning model that uses internal "thinking" tokens:
+- Reasoning tokens count against `max_completion_tokens`
+- Simple tasks may use ~64 reasoning tokens
+- Complex schema generation uses ~1,700+ reasoning tokens
+- **MIN_OUTPUT_TOKENS** set to 4,000 to ensure useful output
+
+**Note:** gpt-5-nano doesn't support custom temperature (only default of 1).
 
 ### Safety Features
 
-1. **Minimum Output Guarantee**: Always reserves at least 1,000 tokens for output
-2. **Safety Buffer**: 2,000 tokens reserved to account for estimation errors
-3. **Warning Logging**: Logs a warning if input is too large (when debug enabled)
+1. **Minimum Output Guarantee**:
+   - DeepSeek: 1,000 tokens minimum
+   - OpenAI: 4,000 tokens minimum (for reasoning overhead)
+2. **Safety Buffer**: 2,000 tokens reserved for estimation errors
+3. **Warning Logging**: Logs warning if input is too large (when debug enabled)
 
 ### When Content is Too Large
 
 If a page exceeds the context window:
-1. Content is truncated at `max_content_chars` (50,000 chars)
+1. Content is truncated at `max_content_chars`
 2. Truncation happens at sentence boundaries when possible
 3. A truncation indicator is added to the prompt
 4. The LLM generates schema based on available content
-
-For extremely large pages, consider:
-- Reducing `max_content_chars` in settings
-- Breaking content into separate pages
-- Using excerpts/summaries for very long content
 
 ## Hooks & Filters Available
 
@@ -523,15 +546,17 @@ do_action('wp_ai_schema_regenerate', $post_id);
 
 ## Current Status
 
-**Version 1.2.0** - Plugin is fully implemented and functional.
+**Version 1.3.0** - Plugin is fully implemented and functional.
 
 ### Implemented Features:
-- DeepSeek LLM integration with comprehensive prompts
+- **Multi-provider support**: DeepSeek and OpenAI (gpt-5-nano)
+- **Per-model token configuration**: Each model defines its own limits
 - HTML structure preservation for better content understanding
 - Comprehensive schema.org reference (14 types)
 - Dynamic token management to prevent context overflow
+- Reasoning model support (OpenAI gpt-5-nano)
 - Encrypted API key storage (AES-256-CBC)
-- Caching with content hash validation
+- Caching with content hash validation (includes provider/model)
 - Rate limiting and retry logic
 - SEO plugin conflict detection
 - Frontend schema output in `<head>`
@@ -540,3 +565,11 @@ do_action('wp_ai_schema_regenerate', $post_id);
   - Multiple location support with addresses and hours
   - Social media profile links
   - Business data takes precedence in schema generation
+
+### v1.3.0 Changes:
+- Added OpenAI provider support (gpt-5-nano model)
+- Per-model token limits (context_window, max_output, max_content_chars)
+- Researched and corrected actual model limits
+- Support for reasoning models (internal thinking tokens)
+- Cache invalidation on provider/model switch
+- Removed user-configurable max_tokens/max_content_chars (now per-model)

@@ -2,8 +2,8 @@
 /**
  * Plugin Name: WP AI SEO Schema Generator
  * Plugin URI: https://debumedia.com/wp-ai-seo-schema-generator
- * Description: Automatically generates schema.org JSON-LD structured data for WordPress pages using AI (DeepSeek).
- * Version: 1.2.0
+ * Description: Automatically generates schema.org JSON-LD structured data for WordPress pages using AI (DeepSeek, OpenAI).
+ * Version: 1.3.0
  * Author: Debu Media
  * Author URI: https://debumedia.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Plugin constants
-define( 'WP_AI_SCHEMA_VERSION', '1.2.0' );
+define( 'WP_AI_SCHEMA_VERSION', '1.3.0' );
 define( 'WP_AI_SCHEMA_PLUGIN_FILE', __FILE__ );
 define( 'WP_AI_SCHEMA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WP_AI_SCHEMA_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -29,6 +29,31 @@ define( 'WP_AI_SCHEMA_TEXT_DOMAIN', 'wp-ai-seo-schema-generator' );
 
 /**
  * Main plugin class
+ *
+ * =============================================================================
+ * GENERATION LIMITS - Each model defines its own limits
+ * =============================================================================
+ *
+ * Each provider defines a MODELS constant array where each model specifies:
+ *   - max_tokens: How many output tokens to request
+ *   - max_content_chars: Maximum page content characters to send
+ *
+ * To change limits, edit the MODELS array in the provider class:
+ *
+ * - DeepSeek: providers/class-deepseek-provider.php
+ *   Look for: const MODELS = array(...)
+ *
+ * - OpenAI: providers/class-openai-provider.php
+ *   Look for: const MODELS = array(...)
+ *
+ * Example model config:
+ *   'model-name' => array(
+ *       'name'              => 'Display Name',
+ *       'context_window'    => 128000,   // Total context (input + output)
+ *       'max_output'        => 8192,     // Model's maximum output tokens
+ *       'max_tokens'        => 8000,     // Our requested output (edit this)
+ *       'max_content_chars' => 50000,    // Content limit (edit this)
+ *   ),
  */
 final class WP_AI_Schema_Generator {
 
@@ -91,6 +116,7 @@ final class WP_AI_Schema_Generator {
         require_once WP_AI_SCHEMA_PLUGIN_DIR . 'providers/class-abstract-provider.php';
         require_once WP_AI_SCHEMA_PLUGIN_DIR . 'providers/class-provider-registry.php';
         require_once WP_AI_SCHEMA_PLUGIN_DIR . 'providers/class-deepseek-provider.php';
+        require_once WP_AI_SCHEMA_PLUGIN_DIR . 'providers/class-openai-provider.php';
 
         // Admin and frontend
         require_once WP_AI_SCHEMA_PLUGIN_DIR . 'includes/class-admin.php';
@@ -112,6 +138,7 @@ final class WP_AI_Schema_Generator {
         // Provider system
         $this->provider_registry = new WP_AI_Schema_Provider_Registry();
         $this->provider_registry->register( new WP_AI_Schema_DeepSeek_Provider( $this->encryption ) );
+        $this->provider_registry->register( new WP_AI_Schema_OpenAI_Provider( $this->encryption ) );
 
         // Prompt builder (depends on content processor)
         $this->prompt_builder = new WP_AI_Schema_Prompt_Builder( $this->content_processor );
@@ -200,11 +227,11 @@ final class WP_AI_Schema_Generator {
             'provider'                   => 'deepseek',
             'deepseek_api_key'           => '',
             'deepseek_model'             => 'deepseek-chat',
+            'openai_api_key'             => '',
+            'openai_model'               => 'gpt-5-nano',
 
-            // Generation settings
+            // Generation settings (max_tokens and max_content_chars are constants - see top of file)
             'temperature'                => 0.2,
-            'max_tokens'                 => 8000,
-            'max_content_chars'          => 50000,
 
             // Output settings
             'output_location'            => 'head',
@@ -268,11 +295,11 @@ final class WP_AI_Schema_Generator {
             'provider'                   => 'deepseek',
             'deepseek_api_key'           => '',
             'deepseek_model'             => 'deepseek-chat',
+            'openai_api_key'             => '',
+            'openai_model'               => 'gpt-5-nano',
 
-            // Generation settings
+            // Generation settings (max_tokens and max_content_chars are constants - see top of file)
             'temperature'                => 0.2,
-            'max_tokens'                 => 8000,
-            'max_content_chars'          => 50000,
 
             // Output settings
             'output_location'            => 'head',

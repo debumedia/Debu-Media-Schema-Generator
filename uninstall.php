@@ -38,11 +38,11 @@ function wp_ai_schema_cleanup_site() {
         $wpdb->query(
             "DELETE FROM {$wpdb->postmeta}
              WHERE meta_key IN (
-                 '_wp_ai_schema_data',
-                 '_wp_ai_schema_last_generated',
-                 '_wp_ai_schema_status',
-                 '_wp_ai_schema_error',
-                 '_wp_ai_schema_hash',
+                 '_wp_ai_schema_schema',
+                 '_wp_ai_schema_schema_last_generated',
+                 '_wp_ai_schema_schema_status',
+                 '_wp_ai_schema_schema_error',
+                 '_wp_ai_schema_schema_hash',
                  '_wp_ai_schema_type_hint',
                  '_wp_ai_schema_detected_type'
              )"

@@ -158,17 +158,17 @@ class WP_AI_Schema_Admin {
         );
 
         add_settings_field(
-            'deepseek_api_key',
-            __( 'DeepSeek API Key', 'wp-ai-seo-schema-generator' ),
-            array( $this, 'render_api_key_field' ),
+            'model',
+            __( 'Model', 'wp-ai-seo-schema-generator' ),
+            array( $this, 'render_model_field' ),
             self::PAGE_SLUG,
             'wp_ai_schema_provider_section'
         );
 
         add_settings_field(
-            'deepseek_model',
-            __( 'Model', 'wp-ai-seo-schema-generator' ),
-            array( $this, 'render_model_field' ),
+            'api_key',
+            __( 'API Key', 'wp-ai-seo-schema-generator' ),
+            array( $this, 'render_api_key_field' ),
             self::PAGE_SLUG,
             'wp_ai_schema_provider_section'
         );
@@ -176,28 +176,15 @@ class WP_AI_Schema_Admin {
 
     /**
      * Add generation settings fields
+     *
+     * Note: max_tokens and max_content_chars are hardcoded constants in wp-ai-seo-schema-generator.php
+     * See WP_AI_SCHEMA_MAX_TOKENS and WP_AI_SCHEMA_MAX_CONTENT_CHARS at the top of that file.
      */
     private function add_generation_fields() {
         add_settings_field(
             'temperature',
             __( 'Temperature', 'wp-ai-seo-schema-generator' ),
             array( $this, 'render_temperature_field' ),
-            self::PAGE_SLUG,
-            'wp_ai_schema_generation_section'
-        );
-
-        add_settings_field(
-            'max_tokens',
-            __( 'Max Tokens', 'wp-ai-seo-schema-generator' ),
-            array( $this, 'render_max_tokens_field' ),
-            self::PAGE_SLUG,
-            'wp_ai_schema_generation_section'
-        );
-
-        add_settings_field(
-            'max_content_chars',
-            __( 'Max Content Characters', 'wp-ai-seo-schema-generator' ),
-            array( $this, 'render_max_content_chars_field' ),
             self::PAGE_SLUG,
             'wp_ai_schema_generation_section'
         );
@@ -343,20 +330,28 @@ class WP_AI_Schema_Admin {
         // Provider
         $sanitized['provider'] = sanitize_text_field( $input['provider'] ?? 'deepseek' );
 
-        // API Key - only update if a new value is provided
+        // DeepSeek API Key - only update if a new value is provided
         if ( ! empty( $input['deepseek_api_key'] ) ) {
             $sanitized['deepseek_api_key'] = $this->encryption->encrypt( sanitize_text_field( $input['deepseek_api_key'] ) );
         } else {
             $sanitized['deepseek_api_key'] = $current['deepseek_api_key'] ?? '';
         }
 
-        // Model
+        // DeepSeek Model
         $sanitized['deepseek_model'] = sanitize_text_field( $input['deepseek_model'] ?? 'deepseek-chat' );
 
-        // Generation settings
+        // OpenAI API Key - only update if a new value is provided
+        if ( ! empty( $input['openai_api_key'] ) ) {
+            $sanitized['openai_api_key'] = $this->encryption->encrypt( sanitize_text_field( $input['openai_api_key'] ) );
+        } else {
+            $sanitized['openai_api_key'] = $current['openai_api_key'] ?? '';
+        }
+
+        // OpenAI Model
+        $sanitized['openai_model'] = sanitize_text_field( $input['openai_model'] ?? 'gpt-5-nano' );
+
+        // Generation settings (max_tokens and max_content_chars are constants, not settings)
         $sanitized['temperature'] = max( 0, min( 1, floatval( $input['temperature'] ?? 0.2 ) ) );
-        $sanitized['max_tokens']  = absint( $input['max_tokens'] ?? 1200 );
-        $sanitized['max_content_chars'] = absint( $input['max_content_chars'] ?? 8000 );
 
         // Output settings
         $sanitized['output_location'] = in_array( $input['output_location'] ?? 'head', array( 'head', 'after_content' ), true )
@@ -897,52 +892,118 @@ class WP_AI_Schema_Admin {
     }
 
     /**
-     * Render API key field
+     * Render model field with provider-specific options
      */
-    public function render_api_key_field() {
-        $settings  = WP_AI_Schema_Generator::get_settings();
-        $has_key   = ! empty( $settings['deepseek_api_key'] );
-        $masked    = $has_key ? $this->encryption->mask_key( $this->encryption->decrypt( $settings['deepseek_api_key'] ) ) : '';
+    public function render_model_field() {
+        $settings         = WP_AI_Schema_Generator::get_settings();
+        $current_provider = $settings['provider'] ?? 'deepseek';
+
+        // DeepSeek models
+        $deepseek_models = array(
+            'deepseek-chat' => 'DeepSeek Chat',
+        );
+
+        // OpenAI models
+        $openai_models = array(
+            'gpt-5-nano' => 'GPT-5 Nano',
+        );
         ?>
-        <div class="ai-jsonld-api-key-wrapper">
-            <input
-                type="password"
-                name="<?php echo esc_attr( self::OPTION_NAME ); ?>[deepseek_api_key]"
-                id="wp_ai_schema_api_key"
-                class="regular-text"
-                placeholder="<?php echo $has_key ? esc_attr( $masked ) : esc_attr__( 'Enter your API key', 'wp-ai-seo-schema-generator' ); ?>"
-                autocomplete="new-password"
-            />
-            <button type="button" id="wp_ai_schema_test_connection" class="button">
-                <?php esc_html_e( 'Test Connection', 'wp-ai-seo-schema-generator' ); ?>
-            </button>
-            <span id="wp_ai_schema_connection_status"></span>
-        </div>
-        <?php if ( $has_key ) : ?>
-            <p class="description">
-                <?php esc_html_e( 'Current key:', 'wp-ai-seo-schema-generator' ); ?> <code><?php echo esc_html( $masked ); ?></code>
-                <?php esc_html_e( 'Leave blank to keep the current key.', 'wp-ai-seo-schema-generator' ); ?>
-            </p>
-        <?php else : ?>
-            <p class="description"><?php esc_html_e( 'Enter your DeepSeek API key.', 'wp-ai-seo-schema-generator' ); ?></p>
-        <?php endif; ?>
+        <!-- DeepSeek model dropdown -->
+        <select
+            name="<?php echo esc_attr( self::OPTION_NAME ); ?>[deepseek_model]"
+            id="wp_ai_schema_deepseek_model"
+            class="wp-ai-schema-model-select"
+            data-provider="deepseek"
+            <?php echo 'deepseek' !== $current_provider ? 'style="display:none;"' : ''; ?>
+        >
+            <?php foreach ( $deepseek_models as $value => $label ) : ?>
+                <option value="<?php echo esc_attr( $value ); ?>" <?php selected( $settings['deepseek_model'], $value ); ?>>
+                    <?php echo esc_html( $label ); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+
+        <!-- OpenAI model dropdown -->
+        <select
+            name="<?php echo esc_attr( self::OPTION_NAME ); ?>[openai_model]"
+            id="wp_ai_schema_openai_model"
+            class="wp-ai-schema-model-select"
+            data-provider="openai"
+            <?php echo 'openai' !== $current_provider ? 'style="display:none;"' : ''; ?>
+        >
+            <?php foreach ( $openai_models as $value => $label ) : ?>
+                <option value="<?php echo esc_attr( $value ); ?>" <?php selected( $settings['openai_model'], $value ); ?>>
+                    <?php echo esc_html( $label ); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+
+        <p class="description"><?php esc_html_e( 'Select the model to use for schema generation.', 'wp-ai-seo-schema-generator' ); ?></p>
         <?php
     }
 
     /**
-     * Render model field
+     * Render API key fields for each provider
      */
-    public function render_model_field() {
-        $settings = WP_AI_Schema_Generator::get_settings();
+    public function render_api_key_field() {
+        $settings         = WP_AI_Schema_Generator::get_settings();
+        $current_provider = $settings['provider'] ?? 'deepseek';
+
+        // DeepSeek API key
+        $deepseek_has_key = ! empty( $settings['deepseek_api_key'] );
+        $deepseek_masked  = $deepseek_has_key ? $this->encryption->mask_key( $this->encryption->decrypt( $settings['deepseek_api_key'] ) ) : '';
+
+        // OpenAI API key
+        $openai_has_key = ! empty( $settings['openai_api_key'] );
+        $openai_masked  = $openai_has_key ? $this->encryption->mask_key( $this->encryption->decrypt( $settings['openai_api_key'] ) ) : '';
         ?>
-        <input
-            type="text"
-            name="<?php echo esc_attr( self::OPTION_NAME ); ?>[deepseek_model]"
-            id="wp_ai_schema_model"
-            value="<?php echo esc_attr( $settings['deepseek_model'] ); ?>"
-            class="regular-text"
-        />
-        <p class="description"><?php esc_html_e( 'The model to use (default: deepseek-chat).', 'wp-ai-seo-schema-generator' ); ?></p>
+        <!-- DeepSeek API Key -->
+        <div class="ai-jsonld-api-key-wrapper wp-ai-schema-api-key-wrapper" data-provider="deepseek" <?php echo 'deepseek' !== $current_provider ? 'style="display:none;"' : ''; ?>>
+            <input
+                type="password"
+                name="<?php echo esc_attr( self::OPTION_NAME ); ?>[deepseek_api_key]"
+                id="wp_ai_schema_deepseek_api_key"
+                class="regular-text wp-ai-schema-api-key"
+                placeholder="<?php echo $deepseek_has_key ? esc_attr( $deepseek_masked ) : esc_attr__( 'Enter your DeepSeek API key', 'wp-ai-seo-schema-generator' ); ?>"
+                autocomplete="new-password"
+            />
+            <button type="button" class="button wp-ai-schema-test-connection" data-provider="deepseek">
+                <?php esc_html_e( 'Test Connection', 'wp-ai-seo-schema-generator' ); ?>
+            </button>
+            <span class="wp-ai-schema-connection-status" data-provider="deepseek"></span>
+            <?php if ( $deepseek_has_key ) : ?>
+                <p class="description">
+                    <?php esc_html_e( 'Current key:', 'wp-ai-seo-schema-generator' ); ?> <code><?php echo esc_html( $deepseek_masked ); ?></code>
+                    <?php esc_html_e( 'Leave blank to keep the current key.', 'wp-ai-seo-schema-generator' ); ?>
+                </p>
+            <?php else : ?>
+                <p class="description"><?php esc_html_e( 'Enter your DeepSeek API key.', 'wp-ai-seo-schema-generator' ); ?></p>
+            <?php endif; ?>
+        </div>
+
+        <!-- OpenAI API Key -->
+        <div class="ai-jsonld-api-key-wrapper wp-ai-schema-api-key-wrapper" data-provider="openai" <?php echo 'openai' !== $current_provider ? 'style="display:none;"' : ''; ?>>
+            <input
+                type="password"
+                name="<?php echo esc_attr( self::OPTION_NAME ); ?>[openai_api_key]"
+                id="wp_ai_schema_openai_api_key"
+                class="regular-text wp-ai-schema-api-key"
+                placeholder="<?php echo $openai_has_key ? esc_attr( $openai_masked ) : esc_attr__( 'Enter your OpenAI API key', 'wp-ai-seo-schema-generator' ); ?>"
+                autocomplete="new-password"
+            />
+            <button type="button" class="button wp-ai-schema-test-connection" data-provider="openai">
+                <?php esc_html_e( 'Test Connection', 'wp-ai-seo-schema-generator' ); ?>
+            </button>
+            <span class="wp-ai-schema-connection-status" data-provider="openai"></span>
+            <?php if ( $openai_has_key ) : ?>
+                <p class="description">
+                    <?php esc_html_e( 'Current key:', 'wp-ai-seo-schema-generator' ); ?> <code><?php echo esc_html( $openai_masked ); ?></code>
+                    <?php esc_html_e( 'Leave blank to keep the current key.', 'wp-ai-seo-schema-generator' ); ?>
+                </p>
+            <?php else : ?>
+                <p class="description"><?php esc_html_e( 'Enter your OpenAI API key.', 'wp-ai-seo-schema-generator' ); ?></p>
+            <?php endif; ?>
+        </div>
         <?php
     }
 
@@ -963,44 +1024,6 @@ class WP_AI_Schema_Admin {
             class="small-text"
         />
         <p class="description"><?php esc_html_e( 'Controls randomness (0-1). Lower values are more deterministic.', 'wp-ai-seo-schema-generator' ); ?></p>
-        <?php
-    }
-
-    /**
-     * Render max tokens field
-     */
-    public function render_max_tokens_field() {
-        $settings = WP_AI_Schema_Generator::get_settings();
-        ?>
-        <input
-            type="number"
-            name="<?php echo esc_attr( self::OPTION_NAME ); ?>[max_tokens]"
-            id="wp_ai_schema_max_tokens"
-            value="<?php echo esc_attr( $settings['max_tokens'] ); ?>"
-            min="100"
-            max="4000"
-            class="small-text"
-        />
-        <p class="description"><?php esc_html_e( 'Maximum tokens in the response (default: 1200).', 'wp-ai-seo-schema-generator' ); ?></p>
-        <?php
-    }
-
-    /**
-     * Render max content chars field
-     */
-    public function render_max_content_chars_field() {
-        $settings = WP_AI_Schema_Generator::get_settings();
-        ?>
-        <input
-            type="number"
-            name="<?php echo esc_attr( self::OPTION_NAME ); ?>[max_content_chars]"
-            id="wp_ai_schema_max_content_chars"
-            value="<?php echo esc_attr( $settings['max_content_chars'] ); ?>"
-            min="1000"
-            max="32000"
-            class="small-text"
-        />
-        <p class="description"><?php esc_html_e( 'Maximum content characters to send to the API (default: 8000).', 'wp-ai-seo-schema-generator' ); ?></p>
         <?php
     }
 
@@ -1148,17 +1171,27 @@ class WP_AI_Schema_Admin {
 
         $settings = WP_AI_Schema_Generator::get_settings();
 
+        // Get the provider to test (from POST data)
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $provider_slug = isset( $_POST['provider'] ) ? sanitize_text_field( wp_unslash( $_POST['provider'] ) ) : $settings['provider'];
+
         // Check if a new API key was provided
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $new_key = isset( $_POST['api_key'] ) ? sanitize_text_field( wp_unslash( $_POST['api_key'] ) ) : '';
 
+        // Determine the API key field name based on provider
+        $api_key_field = $provider_slug . '_api_key';
+
         if ( ! empty( $new_key ) ) {
-            $settings['deepseek_api_key'] = $this->encryption->encrypt( $new_key );
+            $settings[ $api_key_field ] = $this->encryption->encrypt( $new_key );
         }
 
-        if ( empty( $settings['deepseek_api_key'] ) ) {
+        if ( empty( $settings[ $api_key_field ] ) ) {
             wp_send_json_error( array( 'message' => __( 'API key is required.', 'wp-ai-seo-schema-generator' ) ) );
         }
+
+        // Temporarily set the provider to test
+        $settings['provider'] = $provider_slug;
 
         $provider = $this->provider_registry->get_active( $settings );
 

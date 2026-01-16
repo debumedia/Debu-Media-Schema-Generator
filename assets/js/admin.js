@@ -9,21 +9,59 @@
      * Initialize admin functionality
      */
     function init() {
+        bindProviderSwitch();
         bindTestConnection();
         bindApiKeyToggle();
         bindLocationRepeater();
     }
 
     /**
-     * Bind test connection button
+     * Bind provider switch functionality
+     */
+    function bindProviderSwitch() {
+        var $providerSelect = $('#wp_ai_schema_provider');
+
+        if ($providerSelect.length === 0) {
+            return;
+        }
+
+        // Handle provider change
+        $providerSelect.on('change', function() {
+            var selectedProvider = $(this).val();
+            updateProviderFields(selectedProvider);
+        });
+
+        // Initialize on page load (in case of browser back/forward)
+        updateProviderFields($providerSelect.val());
+    }
+
+    /**
+     * Update visible fields based on selected provider
+     *
+     * @param {string} provider The selected provider slug
+     */
+    function updateProviderFields(provider) {
+        // Hide all model dropdowns and API key wrappers
+        $('.wp-ai-schema-model-select').hide();
+        $('.wp-ai-schema-api-key-wrapper').hide();
+
+        // Show the ones matching the selected provider
+        $('.wp-ai-schema-model-select[data-provider="' + provider + '"]').show();
+        $('.wp-ai-schema-api-key-wrapper[data-provider="' + provider + '"]').show();
+    }
+
+    /**
+     * Bind test connection buttons for all providers
      */
     function bindTestConnection() {
-        $('#wp_ai_schema_test_connection').on('click', function(e) {
+        $(document).on('click', '.wp-ai-schema-test-connection', function(e) {
             e.preventDefault();
 
             var $button = $(this);
-            var $status = $('#wp_ai_schema_connection_status');
-            var $apiKeyField = $('#wp_ai_schema_api_key');
+            var provider = $button.data('provider');
+            var $wrapper = $button.closest('.wp-ai-schema-api-key-wrapper');
+            var $status = $wrapper.find('.wp-ai-schema-connection-status');
+            var $apiKeyField = $wrapper.find('.wp-ai-schema-api-key');
             var apiKey = $apiKeyField.val();
 
             // Disable button and show loading state
@@ -37,6 +75,7 @@
                 data: {
                     action: 'wp_ai_schema_test_connection',
                     nonce: wpAiSchemaAdmin.nonce,
+                    provider: provider,
                     api_key: apiKey
                 },
                 success: function(response) {
@@ -57,14 +96,19 @@
     }
 
     /**
-     * Bind API key field toggle visibility
+     * Bind API key field toggle visibility for all providers
      */
     function bindApiKeyToggle() {
-        var $field = $('#wp_ai_schema_api_key');
-        var $wrapper = $field.parent();
+        // Add toggle button to each API key field
+        $('.wp-ai-schema-api-key').each(function() {
+            var $field = $(this);
+            var $wrapper = $field.parent();
 
-        // Add toggle button if not already present
-        if ($wrapper.find('.toggle-password').length === 0) {
+            // Don't add if already present
+            if ($wrapper.find('.toggle-password').length > 0) {
+                return;
+            }
+
             var $toggle = $('<button type="button" class="button button-secondary toggle-password" style="margin-left: 5px;"><span class="dashicons dashicons-visibility" style="line-height: 1.4;"></span></button>');
 
             $toggle.insertAfter($field);
@@ -81,7 +125,7 @@
                     $icon.removeClass('dashicons-hidden').addClass('dashicons-visibility');
                 }
             });
-        }
+        });
     }
 
     /**

@@ -26,16 +26,6 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
     const DEFAULT_MODEL = 'deepseek-chat';
 
     /**
-     * Context window size (total input + output tokens)
-     */
-    const CONTEXT_WINDOW = 64000;
-
-    /**
-     * Maximum output tokens supported by model
-     */
-    const MAX_OUTPUT_TOKENS = 8192;
-
-    /**
      * Minimum output tokens to ensure useful response
      */
     const MIN_OUTPUT_TOKENS = 1000;
@@ -44,6 +34,31 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
      * Safety buffer for token estimation (tokens reserved)
      */
     const TOKEN_SAFETY_BUFFER = 2000;
+
+    /**
+     * ==========================================================================
+     * MODEL CONFIGURATION - Edit these values to change limits per model
+     * ==========================================================================
+     *
+     * Each model defines:
+     *   - name: Display name in admin UI
+     *   - context_window: Total tokens (input + output) the model supports
+     *   - max_output: Maximum output tokens the model can generate (hard limit)
+     *   - max_content_chars: Maximum page content characters to send
+     *
+     * We always request max_output tokens - the calculate_safe_max_tokens()
+     * function will reduce this only if the input is large enough to need it.
+     *
+     * To add a new model, add an entry to this array.
+     */
+    const MODELS = array(
+        'deepseek-chat' => array(
+            'name'              => 'DeepSeek Chat',
+            'context_window'    => 65536,    // 64K total context window
+            'max_output'        => 8000,     // Model's hard max output limit
+            'max_content_chars' => 50000,    // ~14K tokens, leaves room for system prompt + output
+        ),
+    );
 
     /**
      * Get provider name
@@ -61,6 +76,49 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
      */
     public function get_slug(): string {
         return 'deepseek';
+    }
+
+    /**
+     * Get available models for this provider
+     *
+     * @return array
+     */
+    public function get_models(): array {
+        return self::MODELS;
+    }
+
+    /**
+     * Get model configuration
+     *
+     * @param string $model Model ID.
+     * @return array Model config.
+     */
+    public function get_model_config( string $model ): array {
+        return self::MODELS[ $model ] ?? self::MODELS[ self::DEFAULT_MODEL ];
+    }
+
+    /**
+     * Get max tokens for a model (returns the model's hard max_output limit)
+     *
+     * @param string $model Model ID.
+     * @return int Max tokens.
+     */
+    public function get_max_tokens( string $model = '' ): int {
+        $model  = $model ?: self::DEFAULT_MODEL;
+        $config = $this->get_model_config( $model );
+        return $config['max_output'] ?? 8000;
+    }
+
+    /**
+     * Get max content chars for a model
+     *
+     * @param string $model Model ID.
+     * @return int Max content chars.
+     */
+    public function get_max_content_chars( string $model = '' ): int {
+        $model  = $model ?: self::DEFAULT_MODEL;
+        $config = $this->get_model_config( $model );
+        return $config['max_content_chars'] ?? 50000;
     }
 
     /**
@@ -100,16 +158,20 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
             );
         }
 
+        // Get model and its configuration
+        $model        = $settings['deepseek_model'] ?? self::DEFAULT_MODEL;
+        $model_config = $this->get_model_config( $model );
+
         // Build messages
         $messages = $this->build_messages( $payload );
 
-        // Calculate safe max_tokens based on input size
-        $requested_max_tokens = intval( $settings['max_tokens'] ?? 8000 );
-        $safe_max_tokens      = $this->calculate_safe_max_tokens( $messages, $requested_max_tokens );
+        // Calculate safe max_tokens based on input size and model limits
+        // We request the model's full max_output - calculate_safe_max_tokens will reduce only if needed
+        $safe_max_tokens = $this->calculate_safe_max_tokens( $messages, $model_config['max_output'], $model );
 
         // Build request body
         $body = array(
-            'model'       => $settings['deepseek_model'] ?? self::DEFAULT_MODEL,
+            'model'       => $model,
             'messages'    => $messages,
             'temperature' => floatval( $settings['temperature'] ?? 0.2 ),
             'max_tokens'  => $safe_max_tokens,
@@ -123,7 +185,7 @@ class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
                 'Authorization' => 'Bearer ' . $api_key,
             ),
             $body,
-            60 // 60 second timeout for generation
+            120 // 120 second timeout for generation
         );
 
         if ( ! $response['success'] ) {
@@ -441,16 +503,22 @@ BUSINESS DATA (use this verified information for Organization/LocalBusiness sche
      * Ensures we don't exceed the context window by dynamically
      * adjusting output tokens based on input token estimate.
      *
-     * @param array $messages   The messages array to be sent.
-     * @param int   $requested  The requested max_tokens from settings.
+     * @param array  $messages   The messages array to be sent.
+     * @param int    $requested  The requested max_tokens from model config.
+     * @param string $model      The model being used.
      * @return int Safe max_tokens value.
      */
-    private function calculate_safe_max_tokens( array $messages, int $requested ): int {
+    private function calculate_safe_max_tokens( array $messages, int $requested, string $model ): int {
+        // Get model-specific limits
+        $model_config   = $this->get_model_config( $model );
+        $context_window = $model_config['context_window'];
+        $max_output     = $model_config['max_output'];
+
         // Estimate input tokens
         $input_tokens = $this->estimate_tokens( $messages );
 
         // Calculate available tokens for output
-        $available = self::CONTEXT_WINDOW - $input_tokens - self::TOKEN_SAFETY_BUFFER;
+        $available = $context_window - $input_tokens - self::TOKEN_SAFETY_BUFFER;
 
         // Ensure we have at least minimum tokens for a useful response
         if ( $available < self::MIN_OUTPUT_TOKENS ) {
@@ -467,7 +535,7 @@ BUSINESS DATA (use this verified information for Organization/LocalBusiness sche
         }
 
         // Cap at model's maximum output and requested amount
-        $max_allowed = min( self::MAX_OUTPUT_TOKENS, $available );
+        $max_allowed = min( $max_output, $available );
 
         return min( $requested, $max_allowed );
     }

@@ -1,10 +1,11 @@
 # WP AI SEO Schema Generator
 
-A WordPress plugin that automatically generates schema.org JSON-LD structured data for your pages using AI (DeepSeek LLM).
+A WordPress plugin that automatically generates schema.org JSON-LD structured data for your pages using AI (supports DeepSeek and OpenAI).
 
 ## Features
 
-- **AI-Powered Schema Generation** - Uses DeepSeek LLM to analyze page content and generate appropriate schema.org markup
+- **Multi-Provider Support** - Choose between DeepSeek or OpenAI (gpt-5-nano) for schema generation
+- **AI-Powered Schema Generation** - Uses LLMs to analyze page content and generate appropriate schema.org markup
 - **Rich, Comprehensive Output** - Extracts services, contact info, team members, FAQs, and more
 - **Multiple Schema Types** - Supports 14 schema types: Organization, LocalBusiness, Service, Product, Person, Event, FAQPage, Article, WebPage, HowTo, ContactPoint, PostalAddress, Offer, Review
 - **Smart Content Processing** - Preserves HTML structure (headings, lists, sections) for better AI understanding
@@ -12,13 +13,15 @@ A WordPress plugin that automatically generates schema.org JSON-LD structured da
 - **Secure API Key Storage** - AES-256-CBC encryption using WordPress salts
 - **Caching System** - Content hash-based caching prevents unnecessary API calls
 - **SEO Plugin Compatible** - Works alongside Yoast, RankMath, AIOSEO, and SEOPress
-- **Dynamic Token Management** - Automatically adjusts to prevent context window overflow
+- **Per-Model Token Management** - Optimized limits for each model's capabilities
 
 ## Requirements
 
 - WordPress 5.0+
 - PHP 7.4+
-- DeepSeek API key ([Get one here](https://platform.deepseek.com/))
+- API key for your chosen provider:
+  - DeepSeek: [Get API key](https://platform.deepseek.com/)
+  - OpenAI: [Get API key](https://platform.openai.com/)
 
 ## Installation
 
@@ -35,13 +38,14 @@ Navigate to **Settings → AI JSON-LD** to configure:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| API Key | - | Your DeepSeek API key (stored encrypted) |
-| Model | deepseek-chat | The DeepSeek model to use |
-| Temperature | 0.2 | Controls randomness (lower = more consistent) |
-| Max Tokens | 8000 | Maximum tokens for schema output |
-| Max Content Chars | 50000 | Maximum page content to process |
+| Provider | DeepSeek | Choose DeepSeek or OpenAI |
+| API Key | - | Your provider's API key (stored encrypted) |
+| Model | deepseek-chat / gpt-5-nano | The model to use |
+| Temperature | 0.2 | Controls randomness (DeepSeek only) |
 | Output Location | head | Where to inject schema (head or after content) |
 | Enabled Post Types | page | Which post types to enable |
+
+**Note:** Token limits are configured per-model automatically. Each model uses its optimal settings.
 
 ### Generating Schema
 
@@ -112,16 +116,20 @@ The AI analyzes processed content and generates comprehensive JSON-LD:
 
 ### Token Management
 
-The plugin dynamically manages tokens to prevent API errors:
+The plugin uses per-model token limits based on each model's capabilities:
 
-- **Context Window**: DeepSeek has 64K tokens total (input + output)
-- **Input**: System prompt + page content + schema reference
-- **Output**: The generated JSON-LD schema
+| Model | Context Window | Max Output | Max Content |
+|-------|---------------|------------|-------------|
+| deepseek-chat | 65K | 8K | 50K chars |
+| gpt-5-nano | 400K | 128K | 200K chars |
 
+Token limits are automatically calculated:
 ```
-Available Output = 64K - Input Tokens - 2K safety buffer
-Actual max_tokens = min(requested, available, 8192)
+Available Output = Context Window - Input Tokens - 2K safety buffer
+Actual max_tokens = min(max_output, available)
 ```
+
+**Note:** OpenAI's gpt-5-nano is a reasoning model that uses internal "thinking" tokens, which the plugin accounts for automatically.
 
 ## Caching
 
@@ -131,8 +139,9 @@ Schema is cached based on a SHA-256 hash of:
 - Page excerpt
 - Last modified date
 - Plugin settings version
+- Provider and model (so switching providers regenerates)
 
-Schema only regenerates when content changes or you click "Force Regenerate".
+Schema only regenerates when content changes, you switch providers/models, or you click "Force Regenerate".
 
 ## SEO Plugin Compatibility
 
@@ -182,7 +191,8 @@ wp-ai-seo-schema-generator/
 │   ├── interface-provider.php   # Provider contract
 │   ├── class-abstract-provider.php   # Shared functionality
 │   ├── class-provider-registry.php   # Provider management
-│   └── class-deepseek-provider.php   # DeepSeek implementation
+│   ├── class-deepseek-provider.php   # DeepSeek implementation
+│   └── class-openai-provider.php     # OpenAI implementation
 └── assets/
     ├── css/                     # Stylesheets
     └── js/                      # JavaScript
@@ -197,6 +207,20 @@ wp-ai-seo-schema-generator/
 - No sensitive data logged
 
 ## Changelog
+
+### v1.3.0
+- **Added OpenAI provider support** (gpt-5-nano model with 400K context)
+- Per-model token configuration (each model defines its own limits)
+- Researched and corrected actual model limits
+- Support for reasoning models (handles internal thinking tokens)
+- Cache invalidation when switching providers/models
+- Removed user-configurable max_tokens/max_content_chars (now per-model)
+
+### v1.2.0
+- Added Business Details configuration
+- Support for multiple business locations
+- Social media profile links
+- Business data takes precedence in schema generation
 
 ### v1.1.1
 - Increased default limits (max_tokens: 8000, max_content_chars: 50000)

@@ -277,8 +277,13 @@ class WP_AI_Schema_Metabox {
                 'i18n'     => array(
                     'generating'      => __( 'Generating...', 'wp-ai-seo-schema-generator' ),
                     'generate'        => __( 'Generate JSON-LD', 'wp-ai-seo-schema-generator' ),
+                    'preparing'       => __( 'Preparing content...', 'wp-ai-seo-schema-generator' ),
+                    'sending'         => __( 'Sending to AI...', 'wp-ai-seo-schema-generator' ),
+                    'waiting'         => __( 'Waiting for response...', 'wp-ai-seo-schema-generator' ),
+                    'processing'      => __( 'Processing schema...', 'wp-ai-seo-schema-generator' ),
                     'success'         => __( 'Schema generated successfully!', 'wp-ai-seo-schema-generator' ),
                     'error'           => __( 'Error generating schema', 'wp-ai-seo-schema-generator' ),
+                    'timeout'         => __( 'Request timed out. The AI may be busy - please try again.', 'wp-ai-seo-schema-generator' ),
                     'copied'          => __( 'Copied to clipboard!', 'wp-ai-seo-schema-generator' ),
                     'copy_failed'     => __( 'Failed to copy', 'wp-ai-seo-schema-generator' ),
                     'valid_json'      => __( 'Valid JSON', 'wp-ai-seo-schema-generator' ),
