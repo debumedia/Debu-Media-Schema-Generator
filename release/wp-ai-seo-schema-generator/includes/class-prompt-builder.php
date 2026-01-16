@@ -2,7 +2,7 @@
 /**
  * Prompt builder class
  *
- * @package AI_JSONLD_Generator
+ * @package WP_AI_Schema_Generator
  */
 
 // Prevent direct access
@@ -13,21 +13,21 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Builds prompts and payloads for LLM requests
  */
-class AI_JSONLD_Prompt_Builder {
+class WP_AI_Schema_Prompt_Builder {
 
     /**
      * Content processor instance
      *
-     * @var AI_JSONLD_Content_Processor
+     * @var WP_AI_Schema_Content_Processor
      */
     private $content_processor;
 
     /**
      * Constructor
      *
-     * @param AI_JSONLD_Content_Processor $content_processor Content processor instance.
+     * @param WP_AI_Schema_Content_Processor $content_processor Content processor instance.
      */
-    public function __construct( AI_JSONLD_Content_Processor $content_processor ) {
+    public function __construct( WP_AI_Schema_Content_Processor $content_processor ) {
         $this->content_processor = $content_processor;
     }
 
@@ -50,6 +50,7 @@ class AI_JSONLD_Prompt_Builder {
         return array(
             'page'            => $this->build_page_data( $post, $settings ),
             'site'            => $this->build_site_data(),
+            'business'        => $this->build_business_data( $settings ),
             'typeHint'        => $type_hint,
             'schemaReference' => $this->build_schema_reference( $type_hint ),
         );
@@ -62,14 +63,14 @@ class AI_JSONLD_Prompt_Builder {
      * @return string Formatted schema reference.
      */
     private function build_schema_reference( string $type_hint ): string {
-        if ( ! class_exists( 'AI_JSONLD_Schema_Reference' ) ) {
+        if ( ! class_exists( 'WP_AI_Schema_Schema_Reference' ) ) {
             return '';
         }
 
-        $relevant_types = AI_JSONLD_Schema_Reference::get_relevant_types( $type_hint );
-        $definitions    = AI_JSONLD_Schema_Reference::get_definitions_for_types( $relevant_types );
+        $relevant_types = WP_AI_Schema_Schema_Reference::get_relevant_types( $type_hint );
+        $definitions    = WP_AI_Schema_Schema_Reference::get_definitions_for_types( $relevant_types );
 
-        return AI_JSONLD_Schema_Reference::format_for_prompt( $definitions );
+        return WP_AI_Schema_Schema_Reference::format_for_prompt( $definitions );
     }
 
     /**
@@ -123,6 +124,102 @@ class AI_JSONLD_Prompt_Builder {
     }
 
     /**
+     * Build business data array from settings
+     *
+     * @param array $settings Plugin settings.
+     * @return array|null Business data or null if not configured.
+     */
+    private function build_business_data( array $settings ): ?array {
+        // Check if any business data is configured
+        $has_data = ! empty( $settings['business_name'] ) ||
+                    ! empty( $settings['business_email'] ) ||
+                    ! empty( $settings['business_phone'] ) ||
+                    ! empty( $settings['business_locations'] );
+
+        if ( ! $has_data ) {
+            return null;
+        }
+
+        $business = array(
+            'name'         => $settings['business_name'] ?? '',
+            'description'  => $settings['business_description'] ?? '',
+            'logo'         => $settings['business_logo'] ?? '',
+            'email'        => $settings['business_email'] ?? '',
+            'phone'        => $settings['business_phone'] ?? '',
+            'foundingDate' => $settings['business_founding_date'] ?? '',
+        );
+
+        // Add social links (only non-empty ones)
+        $social_links = array();
+        if ( ! empty( $settings['business_social_links'] ) && is_array( $settings['business_social_links'] ) ) {
+            foreach ( $settings['business_social_links'] as $platform => $url ) {
+                if ( ! empty( $url ) ) {
+                    $social_links[] = $url;
+                }
+            }
+        }
+        if ( ! empty( $social_links ) ) {
+            $business['sameAs'] = $social_links;
+        }
+
+        // Add locations
+        if ( ! empty( $settings['business_locations'] ) && is_array( $settings['business_locations'] ) ) {
+            $locations = array();
+
+            foreach ( $settings['business_locations'] as $location ) {
+                $loc_data = array(
+                    'name'       => $location['name'] ?? '',
+                    'address'    => array(
+                        'streetAddress'   => $location['street'] ?? '',
+                        'addressLocality' => $location['city'] ?? '',
+                        'addressRegion'   => $location['state'] ?? '',
+                        'postalCode'      => $location['postal_code'] ?? '',
+                        'addressCountry'  => $location['country'] ?? '',
+                    ),
+                    'telephone'  => $location['phone'] ?? '',
+                    'email'      => $location['email'] ?? '',
+                );
+
+                // Add opening hours if configured
+                if ( ! empty( $location['hours'] ) && is_array( $location['hours'] ) ) {
+                    $hours = array();
+                    $day_map = array(
+                        'monday'    => 'Mo',
+                        'tuesday'   => 'Tu',
+                        'wednesday' => 'We',
+                        'thursday'  => 'Th',
+                        'friday'    => 'Fr',
+                        'saturday'  => 'Sa',
+                        'sunday'    => 'Su',
+                    );
+
+                    foreach ( $location['hours'] as $day => $time ) {
+                        if ( ! empty( $time ) && isset( $day_map[ $day ] ) ) {
+                            $hours[ $day_map[ $day ] ] = $time;
+                        }
+                    }
+
+                    if ( ! empty( $hours ) ) {
+                        $loc_data['openingHours'] = $hours;
+                    }
+                }
+
+                // Remove empty address fields
+                $loc_data['address'] = array_filter( $loc_data['address'] );
+
+                $locations[] = array_filter( $loc_data );
+            }
+
+            if ( ! empty( $locations ) ) {
+                $business['locations'] = $locations;
+            }
+        }
+
+        // Remove empty values
+        return array_filter( $business );
+    }
+
+    /**
      * Get featured image data
      *
      * @param int $post_id Post ID.
@@ -173,7 +270,7 @@ class AI_JSONLD_Prompt_Builder {
      * @return string Type hint or 'auto'.
      */
     private function get_type_hint( int $post_id ): string {
-        $type_hint = get_post_meta( $post_id, '_ai_jsonld_type_hint', true );
+        $type_hint = get_post_meta( $post_id, '_wp_ai_schema_type_hint', true );
         return $type_hint ?: 'auto';
     }
 
@@ -184,17 +281,17 @@ class AI_JSONLD_Prompt_Builder {
      */
     public static function get_schema_type_options(): array {
         return array(
-            'auto'          => __( 'Auto-detect (recommended)', 'ai-jsonld-generator' ),
-            'Article'       => __( 'Article', 'ai-jsonld-generator' ),
-            'WebPage'       => __( 'WebPage', 'ai-jsonld-generator' ),
-            'Service'       => __( 'Service', 'ai-jsonld-generator' ),
-            'LocalBusiness' => __( 'LocalBusiness', 'ai-jsonld-generator' ),
-            'FAQPage'       => __( 'FAQPage', 'ai-jsonld-generator' ),
-            'Product'       => __( 'Product', 'ai-jsonld-generator' ),
-            'Organization'  => __( 'Organization', 'ai-jsonld-generator' ),
-            'Person'        => __( 'Person', 'ai-jsonld-generator' ),
-            'Event'         => __( 'Event', 'ai-jsonld-generator' ),
-            'HowTo'         => __( 'HowTo', 'ai-jsonld-generator' ),
+            'auto'          => __( 'Auto-detect (recommended)', 'wp-ai-seo-schema-generator' ),
+            'Article'       => __( 'Article', 'wp-ai-seo-schema-generator' ),
+            'WebPage'       => __( 'WebPage', 'wp-ai-seo-schema-generator' ),
+            'Service'       => __( 'Service', 'wp-ai-seo-schema-generator' ),
+            'LocalBusiness' => __( 'LocalBusiness', 'wp-ai-seo-schema-generator' ),
+            'FAQPage'       => __( 'FAQPage', 'wp-ai-seo-schema-generator' ),
+            'Product'       => __( 'Product', 'wp-ai-seo-schema-generator' ),
+            'Organization'  => __( 'Organization', 'wp-ai-seo-schema-generator' ),
+            'Person'        => __( 'Person', 'wp-ai-seo-schema-generator' ),
+            'Event'         => __( 'Event', 'wp-ai-seo-schema-generator' ),
+            'HowTo'         => __( 'HowTo', 'wp-ai-seo-schema-generator' ),
         );
     }
 

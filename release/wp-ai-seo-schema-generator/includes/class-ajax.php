@@ -2,7 +2,7 @@
 /**
  * AJAX handler class
  *
- * @package AI_JSONLD_Generator
+ * @package WP_AI_Schema_Generator
  */
 
 // Prevent direct access
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Handles AJAX requests for schema generation
  */
-class AI_JSONLD_Ajax {
+class WP_AI_Schema_Ajax {
 
     /**
      * Per-post cooldown in seconds
@@ -23,53 +23,53 @@ class AI_JSONLD_Ajax {
     /**
      * Content processor
      *
-     * @var AI_JSONLD_Content_Processor
+     * @var WP_AI_Schema_Content_Processor
      */
     private $content_processor;
 
     /**
      * Prompt builder
      *
-     * @var AI_JSONLD_Prompt_Builder
+     * @var WP_AI_Schema_Prompt_Builder
      */
     private $prompt_builder;
 
     /**
      * Provider registry
      *
-     * @var AI_JSONLD_Provider_Registry
+     * @var WP_AI_Schema_Provider_Registry
      */
     private $provider_registry;
 
     /**
      * Schema validator
      *
-     * @var AI_JSONLD_Schema_Validator
+     * @var WP_AI_Schema_Schema_Validator
      */
     private $schema_validator;
 
     /**
      * Encryption handler
      *
-     * @var AI_JSONLD_Encryption
+     * @var WP_AI_Schema_Encryption
      */
     private $encryption;
 
     /**
      * Constructor
      *
-     * @param AI_JSONLD_Content_Processor $content_processor Content processor.
-     * @param AI_JSONLD_Prompt_Builder    $prompt_builder    Prompt builder.
-     * @param AI_JSONLD_Provider_Registry $provider_registry Provider registry.
-     * @param AI_JSONLD_Schema_Validator  $schema_validator  Schema validator.
-     * @param AI_JSONLD_Encryption        $encryption        Encryption handler.
+     * @param WP_AI_Schema_Content_Processor $content_processor Content processor.
+     * @param WP_AI_Schema_Prompt_Builder    $prompt_builder    Prompt builder.
+     * @param WP_AI_Schema_Provider_Registry $provider_registry Provider registry.
+     * @param WP_AI_Schema_Schema_Validator  $schema_validator  Schema validator.
+     * @param WP_AI_Schema_Encryption        $encryption        Encryption handler.
      */
     public function __construct(
-        AI_JSONLD_Content_Processor $content_processor,
-        AI_JSONLD_Prompt_Builder $prompt_builder,
-        AI_JSONLD_Provider_Registry $provider_registry,
-        AI_JSONLD_Schema_Validator $schema_validator,
-        AI_JSONLD_Encryption $encryption
+        WP_AI_Schema_Content_Processor $content_processor,
+        WP_AI_Schema_Prompt_Builder $prompt_builder,
+        WP_AI_Schema_Provider_Registry $provider_registry,
+        WP_AI_Schema_Schema_Validator $schema_validator,
+        WP_AI_Schema_Encryption $encryption
     ) {
         $this->content_processor = $content_processor;
         $this->prompt_builder    = $prompt_builder;
@@ -84,7 +84,7 @@ class AI_JSONLD_Ajax {
      * Initialize hooks
      */
     private function init_hooks() {
-        add_action( 'wp_ajax_ai_jsonld_generate', array( $this, 'handle_generate' ) );
+        add_action( 'wp_ajax_wp_ai_schema_generate', array( $this, 'handle_generate' ) );
     }
 
     /**
@@ -96,21 +96,21 @@ class AI_JSONLD_Ajax {
 
         if ( ! $post_id ) {
             wp_send_json_error( array(
-                'message' => __( 'Invalid post ID.', 'ai-jsonld-generator' ),
+                'message' => __( 'Invalid post ID.', 'wp-ai-seo-schema-generator' ),
             ) );
         }
 
         // Verify nonce
-        if ( ! check_ajax_referer( 'ai_jsonld_generate_' . $post_id, 'nonce', false ) ) {
+        if ( ! check_ajax_referer( 'wp_ai_schema_generate_' . $post_id, 'nonce', false ) ) {
             wp_send_json_error( array(
-                'message' => __( 'Security check failed.', 'ai-jsonld-generator' ),
+                'message' => __( 'Security check failed.', 'wp-ai-seo-schema-generator' ),
             ) );
         }
 
         // Check capabilities
         if ( ! current_user_can( 'edit_post', $post_id ) ) {
             wp_send_json_error( array(
-                'message' => __( 'You do not have permission to edit this post.', 'ai-jsonld-generator' ),
+                'message' => __( 'You do not have permission to edit this post.', 'wp-ai-seo-schema-generator' ),
             ) );
         }
 
@@ -135,27 +135,27 @@ class AI_JSONLD_Ajax {
      * @return array Result array.
      */
     public function generate_schema( int $post_id, bool $force = false ): array {
-        $settings = AI_JSONLD_Generator::get_settings();
+        $settings = WP_AI_Schema_Generator::get_settings();
 
         // Check per-post cooldown
-        $cooldown_key = 'ai_jsonld_cooldown_' . $post_id;
+        $cooldown_key = 'wp_ai_schema_cooldown_' . $post_id;
         if ( get_transient( $cooldown_key ) && ! $force ) {
             return array(
                 'success' => false,
-                'message' => __( 'Please wait before regenerating.', 'ai-jsonld-generator' ),
+                'message' => __( 'Please wait before regenerating.', 'wp-ai-seo-schema-generator' ),
                 'cooldown' => true,
             );
         }
 
         // Check global rate limit
-        $rate_limit_until = get_transient( 'ai_jsonld_rate_limit_until' );
+        $rate_limit_until = get_transient( 'wp_ai_schema_rate_limit_until' );
         if ( $rate_limit_until && time() < $rate_limit_until ) {
             $wait_time = $rate_limit_until - time();
             return array(
                 'success' => false,
                 'message' => sprintf(
                     /* translators: %d: seconds to wait */
-                    __( 'Rate limited. Please try again in %d seconds.', 'ai-jsonld-generator' ),
+                    __( 'Rate limited. Please try again in %d seconds.', 'wp-ai-seo-schema-generator' ),
                     $wait_time
                 ),
                 'rate_limited' => true,
@@ -167,15 +167,15 @@ class AI_JSONLD_Ajax {
         if ( $this->content_processor->is_content_empty( $post_id ) ) {
             return array(
                 'success' => false,
-                'message' => __( 'Page content is too short to generate meaningful schema.', 'ai-jsonld-generator' ),
+                'message' => __( 'Page content is too short to generate meaningful schema.', 'wp-ai-seo-schema-generator' ),
             );
         }
 
         // Check if we should regenerate
         if ( ! $this->content_processor->should_regenerate( $post_id, $settings, $force ) ) {
-            $schema = get_post_meta( $post_id, '_ai_jsonld_schema', true );
-            $hash   = get_post_meta( $post_id, '_ai_jsonld_schema_hash', true );
-            $time   = get_post_meta( $post_id, '_ai_jsonld_schema_last_generated', true );
+            $schema = get_post_meta( $post_id, '_wp_ai_schema_schema', true );
+            $hash   = get_post_meta( $post_id, '_wp_ai_schema_schema_hash', true );
+            $time   = get_post_meta( $post_id, '_wp_ai_schema_schema_last_generated', true );
 
             return array(
                 'success'      => true,
@@ -183,7 +183,7 @@ class AI_JSONLD_Ajax {
                 'cached'       => true,
                 'hash'         => $hash,
                 'generated_at' => intval( $time ),
-                'message'      => __( 'Using cached schema.', 'ai-jsonld-generator' ),
+                'message'      => __( 'Using cached schema.', 'wp-ai-seo-schema-generator' ),
             );
         }
 
@@ -191,20 +191,20 @@ class AI_JSONLD_Ajax {
         $provider = $this->provider_registry->get_active( $settings );
 
         if ( ! $provider ) {
-            $this->save_error( $post_id, __( 'No provider configured.', 'ai-jsonld-generator' ) );
+            $this->save_error( $post_id, __( 'No provider configured.', 'wp-ai-seo-schema-generator' ) );
             return array(
                 'success' => false,
-                'message' => __( 'No LLM provider configured.', 'ai-jsonld-generator' ),
+                'message' => __( 'No LLM provider configured.', 'wp-ai-seo-schema-generator' ),
             );
         }
 
         // Check API key
         $api_key = $this->encryption->decrypt( $settings['deepseek_api_key'] ?? '' );
         if ( empty( $api_key ) ) {
-            $this->save_error( $post_id, __( 'API key not configured.', 'ai-jsonld-generator' ) );
+            $this->save_error( $post_id, __( 'API key not configured.', 'wp-ai-seo-schema-generator' ) );
             return array(
                 'success' => false,
-                'message' => __( 'API key is not configured. Please configure it in Settings.', 'ai-jsonld-generator' ),
+                'message' => __( 'API key is not configured. Please configure it in Settings.', 'wp-ai-seo-schema-generator' ),
             );
         }
 
@@ -212,24 +212,24 @@ class AI_JSONLD_Ajax {
         $payload = $this->prompt_builder->build_payload( $post_id, $settings );
 
         if ( empty( $payload ) ) {
-            $this->save_error( $post_id, __( 'Failed to build prompt payload.', 'ai-jsonld-generator' ) );
+            $this->save_error( $post_id, __( 'Failed to build prompt payload.', 'wp-ai-seo-schema-generator' ) );
             return array(
                 'success' => false,
-                'message' => __( 'Failed to prepare content for generation.', 'ai-jsonld-generator' ),
+                'message' => __( 'Failed to prepare content for generation.', 'wp-ai-seo-schema-generator' ),
             );
         }
 
         // Set cooldown before API call
         set_transient( $cooldown_key, true, self::COOLDOWN_SECONDS );
 
-        AI_JSONLD_Generator::log( sprintf( 'Generating schema for post %d', $post_id ) );
+        WP_AI_Schema_Generator::log( sprintf( 'Generating schema for post %d', $post_id ) );
 
         // Call provider
         $response = $provider->generate_schema( $payload, $settings );
 
         if ( ! $response['success'] ) {
             $this->save_error( $post_id, $response['error'] );
-            AI_JSONLD_Generator::log( sprintf( 'Generation failed for post %d: %s', $post_id, $response['error'] ), 'error' );
+            WP_AI_Schema_Generator::log( sprintf( 'Generation failed for post %d: %s', $post_id, $response['error'] ), 'error' );
 
             return array(
                 'success' => false,
@@ -242,7 +242,7 @@ class AI_JSONLD_Ajax {
 
         if ( ! $validation['valid'] ) {
             $this->save_error( $post_id, $validation['error'] );
-            AI_JSONLD_Generator::log( sprintf( 'Validation failed for post %d: %s', $post_id, $validation['error'] ), 'error' );
+            WP_AI_Schema_Generator::log( sprintf( 'Validation failed for post %d: %s', $post_id, $validation['error'] ), 'error' );
 
             return array(
                 'success' => false,
@@ -254,17 +254,17 @@ class AI_JSONLD_Ajax {
         $hash = $this->content_processor->generate_hash( $post_id, $settings );
         $time = time();
 
-        update_post_meta( $post_id, '_ai_jsonld_schema', $validation['schema'] );
-        update_post_meta( $post_id, '_ai_jsonld_schema_last_generated', $time );
-        update_post_meta( $post_id, '_ai_jsonld_schema_status', 'ok' );
-        update_post_meta( $post_id, '_ai_jsonld_schema_hash', $hash );
-        update_post_meta( $post_id, '_ai_jsonld_schema_error', '' );
+        update_post_meta( $post_id, '_wp_ai_schema_schema', $validation['schema'] );
+        update_post_meta( $post_id, '_wp_ai_schema_schema_last_generated', $time );
+        update_post_meta( $post_id, '_wp_ai_schema_schema_status', 'ok' );
+        update_post_meta( $post_id, '_wp_ai_schema_schema_hash', $hash );
+        update_post_meta( $post_id, '_wp_ai_schema_schema_error', '' );
 
         if ( ! empty( $validation['type'] ) ) {
-            update_post_meta( $post_id, '_ai_jsonld_detected_type', $validation['type'] );
+            update_post_meta( $post_id, '_wp_ai_schema_detected_type', $validation['type'] );
         }
 
-        AI_JSONLD_Generator::log( sprintf( 'Schema generated successfully for post %d', $post_id ) );
+        WP_AI_Schema_Generator::log( sprintf( 'Schema generated successfully for post %d', $post_id ) );
 
         return array(
             'success'       => true,
@@ -273,7 +273,7 @@ class AI_JSONLD_Ajax {
             'hash'          => $hash,
             'generated_at'  => $time,
             'detected_type' => $validation['type'],
-            'message'       => __( 'Schema generated successfully!', 'ai-jsonld-generator' ),
+            'message'       => __( 'Schema generated successfully!', 'wp-ai-seo-schema-generator' ),
         );
     }
 
@@ -284,8 +284,8 @@ class AI_JSONLD_Ajax {
      * @param string $error   Error message.
      */
     private function save_error( int $post_id, string $error ): void {
-        update_post_meta( $post_id, '_ai_jsonld_schema_status', 'error' );
-        update_post_meta( $post_id, '_ai_jsonld_schema_error', $error );
+        update_post_meta( $post_id, '_wp_ai_schema_schema_status', 'error' );
+        update_post_meta( $post_id, '_wp_ai_schema_schema_error', $error );
     }
 
     /**
@@ -295,7 +295,7 @@ class AI_JSONLD_Ajax {
      * @return int Remaining seconds or 0 if no cooldown.
      */
     public function get_cooldown_remaining( int $post_id ): int {
-        $cooldown_key = 'ai_jsonld_cooldown_' . $post_id;
+        $cooldown_key = 'wp_ai_schema_cooldown_' . $post_id;
         $timeout_key  = '_transient_timeout_' . $cooldown_key;
 
         $timeout = get_option( $timeout_key );

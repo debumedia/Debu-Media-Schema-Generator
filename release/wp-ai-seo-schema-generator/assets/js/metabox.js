@@ -21,7 +21,7 @@
      * Bind generate button click
      */
     function bindGenerateButton() {
-        $('#ai_jsonld_generate').on('click', function(e) {
+        $('#wp_ai_schema_generate').on('click', function(e) {
             e.preventDefault();
             generateSchema();
         });
@@ -31,28 +31,28 @@
      * Generate schema via AJAX
      */
     function generateSchema() {
-        var $button = $('#ai_jsonld_generate');
-        var $spinner = $('.ai-jsonld-spinner');
-        var $preview = $('#ai_jsonld_schema_preview');
-        var $message = $('#ai_jsonld_message');
-        var $status = $('.ai-jsonld-status');
+        var $button = $('#wp_ai_schema_generate');
+        var $spinner = $('.wp-ai-schema-spinner');
+        var $preview = $('#wp_ai_schema_schema_preview');
+        var $message = $('#wp_ai_schema_message');
+        var $status = $('.wp-ai-schema-status');
 
-        var typeHint = $('#ai_jsonld_type_hint').val();
-        var forceRegenerate = $('#ai_jsonld_force_regenerate').is(':checked');
+        var typeHint = $('#wp_ai_schema_type_hint').val();
+        var forceRegenerate = $('#wp_ai_schema_force_regenerate').is(':checked');
 
         // Disable button and show loading state
-        $button.prop('disabled', true).addClass('generating').text(aiJsonldMetabox.i18n.generating);
+        $button.prop('disabled', true).addClass('generating').text(wpAiSchemaMetabox.i18n.generating);
         $spinner.addClass('is-active');
         $message.removeClass('success error info').addClass('hidden');
 
         // Make AJAX request
         $.ajax({
-            url: aiJsonldMetabox.ajax_url,
+            url: wpAiSchemaMetabox.ajax_url,
             type: 'POST',
             data: {
-                action: 'ai_jsonld_generate',
-                nonce: aiJsonldMetabox.nonce,
-                post_id: aiJsonldMetabox.post_id,
+                action: 'wp_ai_schema_generate',
+                nonce: wpAiSchemaMetabox.nonce,
+                post_id: wpAiSchemaMetabox.post_id,
                 type_hint: typeHint,
                 force: forceRegenerate ? 1 : 0
             },
@@ -70,26 +70,26 @@
                     // Show success message
                     var messageText = response.data.cached
                         ? response.data.message
-                        : aiJsonldMetabox.i18n.success;
+                        : wpAiSchemaMetabox.i18n.success;
                     showMessage('success', messageText);
 
                     // Update status
                     updateStatus(true, response.data.generated_at);
 
                     // Enable copy and validate buttons
-                    $('#ai_jsonld_copy, #ai_jsonld_validate').prop('disabled', false);
+                    $('#wp_ai_schema_copy, #wp_ai_schema_validate').prop('disabled', false);
 
                     // Reset force regenerate checkbox
-                    $('#ai_jsonld_force_regenerate').prop('checked', false);
+                    $('#wp_ai_schema_force_regenerate').prop('checked', false);
                 } else {
                     handleError(response.data);
                 }
             },
             error: function(xhr, status, error) {
-                showMessage('error', aiJsonldMetabox.i18n.error + ': ' + error);
+                showMessage('error', wpAiSchemaMetabox.i18n.error + ': ' + error);
             },
             complete: function() {
-                $button.removeClass('generating').text(aiJsonldMetabox.i18n.generate);
+                $button.removeClass('generating').text(wpAiSchemaMetabox.i18n.generate);
                 $spinner.removeClass('is-active');
 
                 // Re-enable button after cooldown
@@ -102,7 +102,7 @@
      * Handle error response
      */
     function handleError(data) {
-        var message = data.message || aiJsonldMetabox.i18n.error;
+        var message = data.message || wpAiSchemaMetabox.i18n.error;
 
         if (data.cooldown) {
             showMessage('info', message);
@@ -123,7 +123,7 @@
         seconds = seconds || 30;
         cooldownRemaining = seconds;
 
-        var $button = $('#ai_jsonld_generate');
+        var $button = $('#wp_ai_schema_generate');
 
         // Clear any existing timer
         if (cooldownTimer) {
@@ -139,7 +139,7 @@
             if (cooldownRemaining <= 0) {
                 clearInterval(cooldownTimer);
                 cooldownTimer = null;
-                $button.prop('disabled', false).text(aiJsonldMetabox.i18n.generate);
+                $button.prop('disabled', false).text(wpAiSchemaMetabox.i18n.generate);
             } else {
                 updateCooldownText();
             }
@@ -150,8 +150,8 @@
      * Update cooldown button text
      */
     function updateCooldownText() {
-        var $button = $('#ai_jsonld_generate');
-        var text = aiJsonldMetabox.i18n.cooldown.replace('%d', cooldownRemaining);
+        var $button = $('#wp_ai_schema_generate');
+        var text = wpAiSchemaMetabox.i18n.cooldown.replace('%d', cooldownRemaining);
         $button.prop('disabled', true).text(text);
     }
 
@@ -159,7 +159,7 @@
      * Show message
      */
     function showMessage(type, text) {
-        var $message = $('#ai_jsonld_message');
+        var $message = $('#wp_ai_schema_message');
         $message
             .removeClass('hidden success error info')
             .addClass(type)
@@ -170,21 +170,21 @@
      * Update status display
      */
     function updateStatus(isCurrent, generatedAt) {
-        var $status = $('.ai-jsonld-status');
+        var $status = $('.wp-ai-schema-status');
         var statusHtml = '';
 
         if (isCurrent) {
-            statusHtml += '<span class="ai-jsonld-status-label ai-jsonld-status-current">' +
-                aiJsonldMetabox.i18n.schema_current + '</span>';
+            statusHtml += '<span class="wp-ai-schema-status-label wp-ai-schema-status-current">' +
+                wpAiSchemaMetabox.i18n.schema_current + '</span>';
         } else {
-            statusHtml += '<span class="ai-jsonld-status-label ai-jsonld-status-outdated">' +
-                aiJsonldMetabox.i18n.schema_outdated + '</span>';
+            statusHtml += '<span class="wp-ai-schema-status-label wp-ai-schema-status-outdated">' +
+                wpAiSchemaMetabox.i18n.schema_outdated + '</span>';
         }
 
         if (generatedAt) {
             var date = new Date(generatedAt * 1000);
             var formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-            statusHtml += '<span class="ai-jsonld-generated-time">Last generated: ' + formattedDate + '</span>';
+            statusHtml += '<span class="wp-ai-schema-generated-time">Last generated: ' + formattedDate + '</span>';
         }
 
         $status.html(statusHtml);
@@ -194,10 +194,10 @@
      * Bind copy button
      */
     function bindCopyButton() {
-        $('#ai_jsonld_copy').on('click', function(e) {
+        $('#wp_ai_schema_copy').on('click', function(e) {
             e.preventDefault();
 
-            var $preview = $('#ai_jsonld_schema_preview');
+            var $preview = $('#wp_ai_schema_schema_preview');
             var schema = $preview.val();
 
             if (!schema) {
@@ -207,7 +207,7 @@
             // Copy to clipboard
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(schema).then(function() {
-                    showTemporaryMessage(aiJsonldMetabox.i18n.copied, 'success');
+                    showTemporaryMessage(wpAiSchemaMetabox.i18n.copied, 'success');
                 }).catch(function() {
                     fallbackCopy($preview);
                 });
@@ -224,9 +224,9 @@
         $textarea.select();
         try {
             document.execCommand('copy');
-            showTemporaryMessage(aiJsonldMetabox.i18n.copied, 'success');
+            showTemporaryMessage(wpAiSchemaMetabox.i18n.copied, 'success');
         } catch (e) {
-            showTemporaryMessage(aiJsonldMetabox.i18n.copy_failed, 'error');
+            showTemporaryMessage(wpAiSchemaMetabox.i18n.copy_failed, 'error');
         }
     }
 
@@ -234,7 +234,7 @@
      * Show temporary message
      */
     function showTemporaryMessage(text, type) {
-        var $message = $('#ai_jsonld_message');
+        var $message = $('#wp_ai_schema_message');
         $message
             .removeClass('hidden success error info')
             .addClass(type)
@@ -249,10 +249,10 @@
      * Bind validate button
      */
     function bindValidateButton() {
-        $('#ai_jsonld_validate').on('click', function(e) {
+        $('#wp_ai_schema_validate').on('click', function(e) {
             e.preventDefault();
 
-            var $preview = $('#ai_jsonld_schema_preview');
+            var $preview = $('#wp_ai_schema_schema_preview');
             var schema = $preview.val();
 
             if (!schema) {
@@ -261,9 +261,9 @@
 
             try {
                 JSON.parse(schema);
-                showTemporaryMessage(aiJsonldMetabox.i18n.valid_json, 'success');
+                showTemporaryMessage(wpAiSchemaMetabox.i18n.valid_json, 'success');
             } catch (e) {
-                showTemporaryMessage(aiJsonldMetabox.i18n.invalid_json + ': ' + e.message, 'error');
+                showTemporaryMessage(wpAiSchemaMetabox.i18n.invalid_json + ': ' + e.message, 'error');
             }
         });
     }

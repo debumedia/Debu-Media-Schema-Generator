@@ -2,7 +2,7 @@
 /**
  * DeepSeek provider class
  *
- * @package AI_JSONLD_Generator
+ * @package WP_AI_Schema_Generator
  */
 
 // Prevent direct access
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * DeepSeek LLM provider implementation
  */
-class AI_JSONLD_DeepSeek_Provider extends AI_JSONLD_Abstract_Provider {
+class WP_AI_Schema_DeepSeek_Provider extends WP_AI_Schema_Abstract_Provider {
 
     /**
      * API endpoint
@@ -80,7 +80,7 @@ class AI_JSONLD_DeepSeek_Provider extends AI_JSONLD_Abstract_Provider {
                 'status_code' => 429,
                 'error'       => sprintf(
                     /* translators: %d: seconds until rate limit expires */
-                    __( 'Rate limited. Please try again in %d seconds.', 'ai-jsonld-generator' ),
+                    __( 'Rate limited. Please try again in %d seconds.', 'wp-ai-seo-schema-generator' ),
                     $rate_limited - time()
                 ),
                 'headers'     => array(),
@@ -95,7 +95,7 @@ class AI_JSONLD_DeepSeek_Provider extends AI_JSONLD_Abstract_Provider {
                 'success'     => false,
                 'schema'      => '',
                 'status_code' => 0,
-                'error'       => __( 'DeepSeek API key is not configured.', 'ai-jsonld-generator' ),
+                'error'       => __( 'DeepSeek API key is not configured.', 'wp-ai-seo-schema-generator' ),
                 'headers'     => array(),
             );
         }
@@ -153,7 +153,7 @@ class AI_JSONLD_DeepSeek_Provider extends AI_JSONLD_Abstract_Provider {
             return array(
                 'success' => false,
                 'message' => '',
-                'error'   => __( 'API key is required.', 'ai-jsonld-generator' ),
+                'error'   => __( 'API key is required.', 'wp-ai-seo-schema-generator' ),
             );
         }
 
@@ -190,7 +190,7 @@ class AI_JSONLD_DeepSeek_Provider extends AI_JSONLD_Abstract_Provider {
 
         return array(
             'success' => true,
-            'message' => __( 'Connection successful! API key is valid.', 'ai-jsonld-generator' ),
+            'message' => __( 'Connection successful! API key is valid.', 'wp-ai-seo-schema-generator' ),
             'error'   => '',
         );
     }
@@ -203,16 +203,16 @@ class AI_JSONLD_DeepSeek_Provider extends AI_JSONLD_Abstract_Provider {
     public function get_settings_fields(): array {
         return array(
             'deepseek_api_key' => array(
-                'label'       => __( 'API Key', 'ai-jsonld-generator' ),
+                'label'       => __( 'API Key', 'wp-ai-seo-schema-generator' ),
                 'type'        => 'password',
-                'description' => __( 'Your DeepSeek API key.', 'ai-jsonld-generator' ),
+                'description' => __( 'Your DeepSeek API key.', 'wp-ai-seo-schema-generator' ),
                 'required'    => true,
             ),
             'deepseek_model' => array(
-                'label'       => __( 'Model', 'ai-jsonld-generator' ),
+                'label'       => __( 'Model', 'wp-ai-seo-schema-generator' ),
                 'type'        => 'text',
                 'default'     => self::DEFAULT_MODEL,
-                'description' => __( 'The DeepSeek model to use.', 'ai-jsonld-generator' ),
+                'description' => __( 'The DeepSeek model to use.', 'wp-ai-seo-schema-generator' ),
             ),
         );
     }
@@ -312,6 +312,18 @@ Extract and include ALL relevant information from the content:
 - Areas served or target audience should be included
 - Any pricing or offers should be captured
 
+BUSINESS DATA PRIORITY:
+If BUSINESS DATA is provided in the input, use it as the authoritative source for:
+- Organization/LocalBusiness name, description, logo
+- Contact information (email, phone)
+- Physical addresses and locations (PostalAddress)
+- Opening hours (OpeningHoursSpecification)
+- Social media links (sameAs property)
+- Founding date
+This data has been verified by the site owner and should take precedence over information extracted from page content.
+
+For multiple locations: Create separate LocalBusiness or Place objects for each location, all linked to the main Organization via @id references.
+
 Remember: Completeness with accuracy. Include all information that IS present in the content.';
 
         if ( ! empty( $schema_reference ) ) {
@@ -328,9 +340,10 @@ Remember: Completeness with accuracy. Include all information that IS present in
      * @return string User message.
      */
     private function build_user_message( array $payload ): string {
-        $page_data = $payload['page'] ?? array();
-        $site_data = $payload['site'] ?? array();
-        $type_hint = $payload['typeHint'] ?? 'auto';
+        $page_data     = $payload['page'] ?? array();
+        $site_data     = $payload['site'] ?? array();
+        $business_data = $payload['business'] ?? null;
+        $type_hint     = $payload['typeHint'] ?? 'auto';
 
         // Build truncation indicator if content was truncated
         $truncation_note = '';
@@ -360,6 +373,14 @@ PAGE DATA:
 SITE DATA:
 ' . wp_json_encode( $site_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
 
+        // Include business data if available
+        if ( ! empty( $business_data ) ) {
+            $message .= '
+
+BUSINESS DATA (use this verified information for Organization/LocalBusiness schemas):
+' . wp_json_encode( $business_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+        }
+
         if ( $truncation_note ) {
             $message .= $truncation_note;
         }
@@ -387,7 +408,7 @@ SITE DATA:
                 'success'     => false,
                 'schema'      => '',
                 'status_code' => 200,
-                'error'       => __( 'Failed to parse API response.', 'ai-jsonld-generator' ),
+                'error'       => __( 'Failed to parse API response.', 'wp-ai-seo-schema-generator' ),
                 'headers'     => array(),
             );
         }
@@ -400,7 +421,7 @@ SITE DATA:
                 'success'     => false,
                 'schema'      => '',
                 'status_code' => 200,
-                'error'       => __( 'Empty response from API.', 'ai-jsonld-generator' ),
+                'error'       => __( 'Empty response from API.', 'wp-ai-seo-schema-generator' ),
                 'headers'     => array(),
             );
         }
@@ -434,7 +455,7 @@ SITE DATA:
         // Ensure we have at least minimum tokens for a useful response
         if ( $available < self::MIN_OUTPUT_TOKENS ) {
             // Log warning if debug enabled
-            AI_JSONLD_Generator::log(
+            WP_AI_Schema_Generator::log(
                 sprintf(
                     'Input too large: ~%d tokens estimated, only %d available for output',
                     $input_tokens,

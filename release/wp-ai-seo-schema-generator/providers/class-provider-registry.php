@@ -2,7 +2,7 @@
 /**
  * Provider registry class
  *
- * @package AI_JSONLD_Generator
+ * @package WP_AI_Schema_Generator
  */
 
 // Prevent direct access
@@ -13,26 +13,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Manages LLM provider registration and lookup
  */
-class AI_JSONLD_Provider_Registry {
+class WP_AI_Schema_Provider_Registry {
 
     /**
      * Registered providers
      *
-     * @var AI_JSONLD_Provider_Interface[]
+     * @var WP_AI_Schema_Provider_Interface[]
      */
     private $providers = array();
 
     /**
      * Register a provider
      *
-     * @param AI_JSONLD_Provider_Interface $provider Provider instance.
+     * @param WP_AI_Schema_Provider_Interface $provider Provider instance.
      * @return bool True if registered successfully.
      */
-    public function register( AI_JSONLD_Provider_Interface $provider ): bool {
+    public function register( WP_AI_Schema_Provider_Interface $provider ): bool {
         $slug = $provider->get_slug();
 
         if ( isset( $this->providers[ $slug ] ) ) {
-            AI_JSONLD_Generator::log(
+            WP_AI_Schema_Generator::log(
                 sprintf( 'Provider "%s" is already registered.', $slug ),
                 'warning'
             );
@@ -62,16 +62,16 @@ class AI_JSONLD_Provider_Registry {
      * Get a provider by slug
      *
      * @param string $slug Provider slug.
-     * @return AI_JSONLD_Provider_Interface|null Provider instance or null.
+     * @return WP_AI_Schema_Provider_Interface|null Provider instance or null.
      */
-    public function get( string $slug ): ?AI_JSONLD_Provider_Interface {
+    public function get( string $slug ): ?WP_AI_Schema_Provider_Interface {
         return $this->providers[ $slug ] ?? null;
     }
 
     /**
      * Get all registered providers
      *
-     * @return AI_JSONLD_Provider_Interface[]
+     * @return WP_AI_Schema_Provider_Interface[]
      */
     public function get_all(): array {
         return $this->providers;
@@ -106,11 +106,11 @@ class AI_JSONLD_Provider_Registry {
      * Get the currently active provider based on settings
      *
      * @param array $settings Plugin settings (optional).
-     * @return AI_JSONLD_Provider_Interface|null Active provider or null.
+     * @return WP_AI_Schema_Provider_Interface|null Active provider or null.
      */
-    public function get_active( array $settings = array() ): ?AI_JSONLD_Provider_Interface {
+    public function get_active( array $settings = array() ): ?WP_AI_Schema_Provider_Interface {
         if ( empty( $settings ) ) {
-            $settings = AI_JSONLD_Generator::get_settings();
+            $settings = WP_AI_Schema_Generator::get_settings();
         }
 
         $provider_slug = $settings['provider'] ?? 'deepseek';

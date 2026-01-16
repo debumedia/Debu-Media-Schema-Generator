@@ -2,7 +2,7 @@
 /**
  * Content processor class
  *
- * @package AI_JSONLD_Generator
+ * @package WP_AI_Schema_Generator
  */
 
 // Prevent direct access
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Handles content preparation and truncation for LLM processing
  */
-class AI_JSONLD_Content_Processor {
+class WP_AI_Schema_Content_Processor {
 
     /**
      * Default maximum content characters
@@ -253,7 +253,7 @@ class AI_JSONLD_Content_Processor {
             return '';
         }
 
-        $type_hint = get_post_meta( $post_id, '_ai_jsonld_type_hint', true );
+        $type_hint = get_post_meta( $post_id, '_wp_ai_schema_type_hint', true );
 
         $hash_input = wp_json_encode(
             array(
@@ -283,13 +283,13 @@ class AI_JSONLD_Content_Processor {
             return true;
         }
 
-        $existing_schema = get_post_meta( $post_id, '_ai_jsonld_schema', true );
+        $existing_schema = get_post_meta( $post_id, '_wp_ai_schema_schema', true );
 
         if ( empty( $existing_schema ) ) {
             return true;
         }
 
-        $stored_hash  = get_post_meta( $post_id, '_ai_jsonld_schema_hash', true );
+        $stored_hash  = get_post_meta( $post_id, '_wp_ai_schema_schema_hash', true );
         $current_hash = $this->generate_hash( $post_id, $settings );
 
         return $stored_hash !== $current_hash;
@@ -311,11 +311,11 @@ class AI_JSONLD_Content_Processor {
      * }
      */
     public function get_cache_status( int $post_id, array $settings ): array {
-        $schema      = get_post_meta( $post_id, '_ai_jsonld_schema', true );
-        $generated   = get_post_meta( $post_id, '_ai_jsonld_schema_last_generated', true );
-        $status      = get_post_meta( $post_id, '_ai_jsonld_schema_status', true );
-        $error       = get_post_meta( $post_id, '_ai_jsonld_schema_error', true );
-        $stored_hash = get_post_meta( $post_id, '_ai_jsonld_schema_hash', true );
+        $schema      = get_post_meta( $post_id, '_wp_ai_schema_schema', true );
+        $generated   = get_post_meta( $post_id, '_wp_ai_schema_schema_last_generated', true );
+        $status      = get_post_meta( $post_id, '_wp_ai_schema_schema_status', true );
+        $error       = get_post_meta( $post_id, '_wp_ai_schema_schema_error', true );
+        $stored_hash = get_post_meta( $post_id, '_wp_ai_schema_schema_hash', true );
 
         $has_schema = ! empty( $schema );
         $is_current = false;

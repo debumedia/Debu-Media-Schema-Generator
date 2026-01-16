@@ -5,7 +5,7 @@
  * Provides comprehensive schema.org type definitions and property references
  * to guide the LLM in generating rich, complete structured data.
  *
- * @package AI_JSONLD_Generator
+ * @package WP_AI_Schema_Generator
  */
 
 // Prevent direct access
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Schema.org type definitions and property references
  */
-class AI_JSONLD_Schema_Reference {
+class WP_AI_Schema_Schema_Reference {
 
     /**
      * Get all schema definitions

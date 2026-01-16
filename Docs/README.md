@@ -1,4 +1,4 @@
-# AI JSON-LD Generator
+# WP AI SEO Schema Generator
 
 A WordPress plugin that automatically generates schema.org JSON-LD structured data for your pages using AI (DeepSeek LLM).
 
@@ -46,7 +46,7 @@ Navigate to **Settings → AI JSON-LD** to configure:
 ### Generating Schema
 
 1. Edit any page in WordPress
-2. Find the **AI JSON-LD Generator** metabox in the sidebar
+2. Find the **WP AI SEO Schema Generator** metabox in the sidebar
 3. Optionally select a preferred schema type (or leave as Auto-detect)
 4. Click **Generate JSON-LD**
 5. Review the generated schema in the preview
@@ -149,23 +149,23 @@ Enable "Skip if schema exists" in settings to prevent duplicates.
 
 ```php
 // Control whether to output schema
-add_filter('ai_jsonld_should_output', function($should_output, $post_id) {
+add_filter('wp_ai_schema_should_output', function($should_output, $post_id) {
     // Your logic here
     return $should_output;
 }, 10, 2);
 
 // Allow output even with Yoast active
-add_filter('ai_jsonld_output_with_yoast', '__return_true');
+add_filter('wp_ai_schema_output_with_yoast', '__return_true');
 
 // Allow output even with RankMath active
-add_filter('ai_jsonld_output_with_rankmath', '__return_true');
+add_filter('wp_ai_schema_output_with_rankmath', '__return_true');
 ```
 
 ## File Structure
 
 ```
-ai-jsonld-generator/
-├── ai-jsonld-generator.php      # Main plugin file
+wp-ai-seo-schema-generator/
+├── wp-ai-seo-schema-generator.php      # Main plugin file
 ├── uninstall.php                # Cleanup on uninstall
 ├── includes/
 │   ├── class-admin.php          # Settings page

@@ -2,7 +2,7 @@
 /**
  * Abstract provider base class
  *
- * @package AI_JSONLD_Generator
+ * @package WP_AI_Schema_Generator
  */
 
 // Prevent direct access
@@ -15,12 +15,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Provides shared functionality like HTTP requests, retry logic, and rate limiting.
  */
-abstract class AI_JSONLD_Abstract_Provider implements AI_JSONLD_Provider_Interface {
+abstract class WP_AI_Schema_Abstract_Provider implements WP_AI_Schema_Provider_Interface {
 
     /**
      * Encryption handler
      *
-     * @var AI_JSONLD_Encryption
+     * @var WP_AI_Schema_Encryption
      */
     protected $encryption;
 
@@ -40,9 +40,9 @@ abstract class AI_JSONLD_Abstract_Provider implements AI_JSONLD_Provider_Interfa
     /**
      * Constructor
      *
-     * @param AI_JSONLD_Encryption $encryption Encryption handler.
+     * @param WP_AI_Schema_Encryption $encryption Encryption handler.
      */
-    public function __construct( AI_JSONLD_Encryption $encryption ) {
+    public function __construct( WP_AI_Schema_Encryption $encryption ) {
         $this->encryption = $encryption;
     }
 
@@ -141,7 +141,7 @@ abstract class AI_JSONLD_Abstract_Provider implements AI_JSONLD_Provider_Interfa
             }
 
             // Log retry attempt
-            AI_JSONLD_Generator::log(
+            WP_AI_Schema_Generator::log(
                 sprintf( 'API request failed with status %d, retrying (attempt %d/%d)', $status_code, $attempt, self::MAX_RETRIES ),
                 'warning'
             );
@@ -156,7 +156,7 @@ abstract class AI_JSONLD_Abstract_Provider implements AI_JSONLD_Provider_Interfa
             'body'        => null,
             'status_code' => 0,
             'headers'     => array(),
-            'error'       => __( 'Max retries exceeded', 'ai-jsonld-generator' ),
+            'error'       => __( 'Max retries exceeded', 'wp-ai-seo-schema-generator' ),
         );
     }
 
@@ -173,9 +173,9 @@ abstract class AI_JSONLD_Abstract_Provider implements AI_JSONLD_Provider_Interfa
         }
 
         $until = time() + $retry_after;
-        set_transient( 'ai_jsonld_rate_limit_until', $until, $retry_after + 10 );
+        set_transient( 'wp_ai_schema_rate_limit_until', $until, $retry_after + 10 );
 
-        AI_JSONLD_Generator::log(
+        WP_AI_Schema_Generator::log(
             sprintf( 'Rate limited. Blocking requests until %s', gmdate( 'Y-m-d H:i:s', $until ) ),
             'warning'
         );
@@ -187,14 +187,14 @@ abstract class AI_JSONLD_Abstract_Provider implements AI_JSONLD_Provider_Interfa
      * @return bool|int False if not limited, or timestamp when limit expires.
      */
     protected function is_rate_limited() {
-        $until = get_transient( 'ai_jsonld_rate_limit_until' );
+        $until = get_transient( 'wp_ai_schema_rate_limit_until' );
 
         if ( false === $until ) {
             return false;
         }
 
         if ( time() >= $until ) {
-            delete_transient( 'ai_jsonld_rate_limit_until' );
+            delete_transient( 'wp_ai_schema_rate_limit_until' );
             return false;
         }
 
@@ -223,24 +223,24 @@ abstract class AI_JSONLD_Abstract_Provider implements AI_JSONLD_Provider_Interfa
         // Generic error messages based on status code
         switch ( $status_code ) {
             case 400:
-                return __( 'Bad request. Please check your settings.', 'ai-jsonld-generator' );
+                return __( 'Bad request. Please check your settings.', 'wp-ai-seo-schema-generator' );
             case 401:
-                return __( 'Invalid API key. Please check your credentials.', 'ai-jsonld-generator' );
+                return __( 'Invalid API key. Please check your credentials.', 'wp-ai-seo-schema-generator' );
             case 403:
-                return __( 'Access forbidden. Please check your API key permissions.', 'ai-jsonld-generator' );
+                return __( 'Access forbidden. Please check your API key permissions.', 'wp-ai-seo-schema-generator' );
             case 404:
-                return __( 'API endpoint not found.', 'ai-jsonld-generator' );
+                return __( 'API endpoint not found.', 'wp-ai-seo-schema-generator' );
             case 429:
-                return __( 'Rate limit exceeded. Please try again later.', 'ai-jsonld-generator' );
+                return __( 'Rate limit exceeded. Please try again later.', 'wp-ai-seo-schema-generator' );
             case 500:
             case 502:
             case 503:
             case 504:
-                return __( 'Server error. Please try again later.', 'ai-jsonld-generator' );
+                return __( 'Server error. Please try again later.', 'wp-ai-seo-schema-generator' );
             default:
                 return sprintf(
                     /* translators: %d: HTTP status code */
-                    __( 'Request failed with status code %d.', 'ai-jsonld-generator' ),
+                    __( 'Request failed with status code %d.', 'wp-ai-seo-schema-generator' ),
                     $status_code
                 );
         }

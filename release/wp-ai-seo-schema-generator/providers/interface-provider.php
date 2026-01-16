@@ -2,7 +2,7 @@
 /**
  * Provider interface
  *
- * @package AI_JSONLD_Generator
+ * @package WP_AI_Schema_Generator
  */
 
 // Prevent direct access
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * All LLM providers must implement this interface to be compatible with the plugin.
  */
-interface AI_JSONLD_Provider_Interface {
+interface WP_AI_Schema_Provider_Interface {
 
     /**
      * Get the provider's display name

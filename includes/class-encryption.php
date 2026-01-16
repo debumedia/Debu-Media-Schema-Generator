@@ -2,7 +2,7 @@
 /**
  * Encryption class for API key security
  *
- * @package AI_JSONLD_Generator
+ * @package WP_AI_Schema_Generator
  */
 
 // Prevent direct access
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Handles encryption and decryption of sensitive data (API keys)
  */
-class AI_JSONLD_Encryption {
+class WP_AI_Schema_Encryption {
 
     /**
      * Encryption cipher
@@ -35,7 +35,7 @@ class AI_JSONLD_Encryption {
      * @return string Binary key
      */
     private function get_key() {
-        return hash( 'sha256', wp_salt( 'auth' ) . 'ai_jsonld_key', true );
+        return hash( 'sha256', wp_salt( 'auth' ) . 'wp_ai_schema_key', true );
     }
 
     /**
@@ -60,7 +60,7 @@ class AI_JSONLD_Encryption {
 
         // Fallback if OpenSSL not available
         if ( ! $this->is_available() ) {
-            AI_JSONLD_Generator::log( 'OpenSSL not available - API key stored unencrypted', 'warning' );
+            WP_AI_Schema_Generator::log( 'OpenSSL not available - API key stored unencrypted', 'warning' );
             return base64_encode( $plain_text );
         }
 
@@ -73,7 +73,7 @@ class AI_JSONLD_Encryption {
         );
 
         if ( false === $encrypted ) {
-            AI_JSONLD_Generator::log( 'Encryption failed', 'error' );
+            WP_AI_Schema_Generator::log( 'Encryption failed', 'error' );
             return '';
         }
 
@@ -111,7 +111,7 @@ class AI_JSONLD_Encryption {
         );
 
         if ( false === $decrypted ) {
-            AI_JSONLD_Generator::log( 'Decryption failed', 'error' );
+            WP_AI_Schema_Generator::log( 'Decryption failed', 'error' );
             return '';
         }
 
@@ -193,7 +193,7 @@ class AI_JSONLD_Encryption {
             '<div class="notice notice-warning"><p>%s</p></div>',
             esc_html__(
                 'OpenSSL extension is not available. API keys will be stored with basic encoding only. For better security, please enable the OpenSSL PHP extension.',
-                'ai-jsonld-generator'
+                'wp-ai-seo-schema-generator'
             )
         );
     }

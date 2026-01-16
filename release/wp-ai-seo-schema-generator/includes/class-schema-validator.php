@@ -2,7 +2,7 @@
 /**
  * Schema validator class
  *
- * @package AI_JSONLD_Generator
+ * @package WP_AI_Schema_Generator
  */
 
 // Prevent direct access
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Validates and sanitizes JSON-LD schema output
  */
-class AI_JSONLD_Schema_Validator {
+class WP_AI_Schema_Schema_Validator {
 
     /**
      * Maximum schema size in bytes (50 KB)
@@ -44,7 +44,7 @@ class AI_JSONLD_Schema_Validator {
             return array(
                 'valid'  => false,
                 'schema' => '',
-                'error'  => __( 'Empty or no valid JSON found in response.', 'ai-jsonld-generator' ),
+                'error'  => __( 'Empty or no valid JSON found in response.', 'wp-ai-seo-schema-generator' ),
                 'type'   => '',
             );
         }
@@ -56,7 +56,7 @@ class AI_JSONLD_Schema_Validator {
                 'schema' => '',
                 'error'  => sprintf(
                     /* translators: %d: Maximum size in KB */
-                    __( 'Schema exceeds maximum size of %d KB.', 'ai-jsonld-generator' ),
+                    __( 'Schema exceeds maximum size of %d KB.', 'wp-ai-seo-schema-generator' ),
                     self::MAX_SIZE / 1024
                 ),
                 'type'   => '',
@@ -72,7 +72,7 @@ class AI_JSONLD_Schema_Validator {
                 'schema' => '',
                 'error'  => sprintf(
                     /* translators: %s: JSON error message */
-                    __( 'Invalid JSON: %s', 'ai-jsonld-generator' ),
+                    __( 'Invalid JSON: %s', 'wp-ai-seo-schema-generator' ),
                     json_last_error_msg()
                 ),
                 'type'   => '',
@@ -202,7 +202,7 @@ class AI_JSONLD_Schema_Validator {
                 if ( ! is_array( $decoded['@graph'] ) ) {
                     return array(
                         'valid' => false,
-                        'error' => __( '@graph must be an array.', 'ai-jsonld-generator' ),
+                        'error' => __( '@graph must be an array.', 'wp-ai-seo-schema-generator' ),
                         'type'  => '',
                     );
                 }
@@ -222,7 +222,7 @@ class AI_JSONLD_Schema_Validator {
         if ( ! $has_context ) {
             return array(
                 'valid' => false,
-                'error' => __( 'Schema must include @context.', 'ai-jsonld-generator' ),
+                'error' => __( 'Schema must include @context.', 'wp-ai-seo-schema-generator' ),
                 'type'  => '',
             );
         }

@@ -2,7 +2,7 @@
 /**
  * Conflict detector class
  *
- * @package AI_JSONLD_Generator
+ * @package WP_AI_Schema_Generator
  */
 
 // Prevent direct access
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Detects conflicts with SEO plugins that output their own JSON-LD schema
  */
-class AI_JSONLD_Conflict_Detector {
+class WP_AI_Schema_Conflict_Detector {
 
     /**
      * Detected SEO plugin
@@ -191,9 +191,9 @@ class AI_JSONLD_Conflict_Detector {
             $should_output = false;
 
             if ( $this->has_yoast() ) {
-                $should_output = apply_filters( 'ai_jsonld_output_with_yoast', false, $post_id );
+                $should_output = apply_filters( 'wp_ai_schema_output_with_yoast', false, $post_id );
             } elseif ( $this->has_rankmath() ) {
-                $should_output = apply_filters( 'ai_jsonld_output_with_rankmath', false, $post_id );
+                $should_output = apply_filters( 'wp_ai_schema_output_with_rankmath', false, $post_id );
             }
 
             if ( ! $should_output ) {
@@ -201,7 +201,7 @@ class AI_JSONLD_Conflict_Detector {
                     'should_output' => false,
                     'reason'        => sprintf(
                         /* translators: %s: SEO plugin name */
-                        __( 'Skipped - %s schema is active', 'ai-jsonld-generator' ),
+                        __( 'Skipped - %s schema is active', 'wp-ai-seo-schema-generator' ),
                         $plugin
                     ),
                 );
@@ -234,7 +234,7 @@ class AI_JSONLD_Conflict_Detector {
                     /* translators: %s: SEO plugin name */
                     esc_html__(
                         '%s detected with schema output enabled. Enable "Skip if schema exists" in settings to prevent duplicate schema.',
-                        'ai-jsonld-generator'
+                        'wp-ai-seo-schema-generator'
                     ),
                     esc_html( $plugin )
                 )
