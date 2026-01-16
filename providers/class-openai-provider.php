@@ -486,7 +486,7 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
      * @param array $payload Prompt payload.
      * @return array Messages array.
      */
-    private function build_messages( array $payload ): array {
+    public function build_messages( array $payload ): array {
         // Check if this is a two-pass generation from analyzed content
         $is_from_analysis = ! empty( $payload['isFromAnalysis'] );
 
