@@ -86,8 +86,11 @@ class WP_AI_Schema_Validator {
             return $structure_result;
         }
 
-        // Re-encode to ensure consistent formatting
-        $clean_schema = wp_json_encode( $decoded, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+        // Re-encode to ensure consistent formatting and security
+        // Note: We intentionally do NOT use JSON_UNESCAPED_SLASHES here.
+        // This ensures forward slashes are escaped as \/ which prevents
+        // potential XSS via </script> sequences breaking out of the JSON-LD script tag.
+        $clean_schema = wp_json_encode( $decoded, JSON_UNESCAPED_UNICODE );
 
         return array(
             'valid'  => true,
