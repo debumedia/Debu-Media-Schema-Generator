@@ -57,53 +57,6 @@ class WP_AI_Schema_Content_Processor {
     }
 
     /**
-     * Prepare raw HTML for AI analysis (minimal cleaning)
-     *
-     * Only removes elements that waste tokens and provide no value:
-     * - <script> tags and content
-     * - <style> tags and content
-     * - HTML comments
-     *
-     * Keeps ALL other HTML including:
-     * - Structure (div, section, article, etc.)
-     * - Classes and IDs (crucial for AI to understand layout)
-     * - Semantic tags (blockquote, cite, etc.)
-     *
-     * This allows the AI to analyze the full HTML structure and
-     * identify patterns like testimonials, FAQs, etc. regardless
-     * of language or page builder used.
-     *
-     * @param string $html Raw HTML content.
-     * @return string Cleaned HTML with structure preserved.
-     */
-    public function prepare_raw_html( string $html ): string {
-        if ( empty( $html ) ) {
-            return '';
-        }
-
-        // Remove script tags and content (no value for analysis)
-        $html = preg_replace( '/<script[^>]*>.*?<\/script>/is', '', $html );
-
-        // Remove style tags and content (no value for analysis)
-        $html = preg_replace( '/<style[^>]*>.*?<\/style>/is', '', $html );
-
-        // Remove HTML comments
-        $html = preg_replace( '/<!--.*?-->/s', '', $html );
-
-        // Remove SVG content (large, no semantic value)
-        $html = preg_replace( '/<svg[^>]*>.*?<\/svg>/is', '', $html );
-
-        // Remove noscript content
-        $html = preg_replace( '/<noscript[^>]*>.*?<\/noscript>/is', '', $html );
-
-        // Normalize excessive whitespace but preserve structure
-        $html = preg_replace( '/\n{3,}/', "\n\n", $html );
-        $html = preg_replace( '/[ \t]+/', ' ', $html );
-
-        return trim( $html );
-    }
-
-    /**
      * Prepare content preserving semantic structure
      *
      * Converts HTML structure to readable markers that help the LLM
