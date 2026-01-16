@@ -290,9 +290,18 @@
         var $preview = $('#wp_ai_schema_schema_preview');
         var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
-        debugLog('Stream event: ' + eventType, data);
+        // Don't log keepalives (too noisy)
+        if (eventType !== 'keepalive') {
+            debugLog('Stream event: ' + eventType, data);
+        }
 
         switch (eventType) {
+            case 'keepalive':
+                // Just update elapsed time to show activity
+                var currentText = $button.text().replace(/\s*\([^)]*\)$/, '');
+                $button.text(currentText + ' (' + elapsed + 's)');
+                break;
+
             case 'status':
                 // Update button with current status
                 var statusText = data.message || 'Processing...';

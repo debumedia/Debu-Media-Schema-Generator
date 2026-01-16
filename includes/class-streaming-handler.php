@@ -503,6 +503,13 @@ class WP_AI_Schema_Streaming_Handler {
     private $error_response = '';
 
     /**
+     * Last time we sent a keepalive
+     *
+     * @var float
+     */
+    private $last_keepalive = 0;
+
+    /**
      * Make a streaming HTTP request and forward events
      *
      * @param string $endpoint API endpoint.
@@ -516,6 +523,7 @@ class WP_AI_Schema_Streaming_Handler {
         $this->stream_buffer = '';
         $this->accumulated_content = '';
         $this->error_response = '';
+        $this->last_keepalive = microtime( true );
 
         // Use cURL for streaming support
         $ch = curl_init( $endpoint );
@@ -529,7 +537,24 @@ class WP_AI_Schema_Streaming_Handler {
             CURLOPT_POSTFIELDS     => wp_json_encode( $body ),
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_TIMEOUT        => 300,
+            // Enable progress callback for keepalives
+            CURLOPT_NOPROGRESS     => false,
+            CURLOPT_PROGRESSFUNCTION => function( $ch, $download_size, $downloaded, $upload_size, $uploaded ) use ( $phase ) {
+                // Send keepalive every 5 seconds to prevent connection timeout
+                $now = microtime( true );
+                if ( $now - $this->last_keepalive > 5 ) {
+                    $this->send_sse_event( 'keepalive', array(
+                        'phase' => $phase,
+                        'time'  => round( $now - $this->last_keepalive, 1 ),
+                    ) );
+                    $this->last_keepalive = $now;
+                }
+                return 0; // Return 0 to continue, non-zero to abort
+            },
             CURLOPT_WRITEFUNCTION  => function( $ch, $data ) use ( $phase ) {
+                // Reset keepalive timer when we receive data
+                $this->last_keepalive = microtime( true );
+
                 // Check HTTP code - if error, capture response for debugging
                 $http_code = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
                 if ( $http_code >= 400 ) {
