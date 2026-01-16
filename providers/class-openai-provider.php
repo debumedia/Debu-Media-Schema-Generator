@@ -16,9 +16,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
 
     /**
-     * API endpoint
+     * API endpoint (using Responses API - recommended for GPT-5 models)
      */
-    const API_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+    const API_ENDPOINT = 'https://api.openai.com/v1/responses';
 
     /**
      * Default model
@@ -183,20 +183,22 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
         // We request the model's full max_output - calculate_safe_max_tokens will reduce only if needed
         $safe_max_tokens = $this->calculate_safe_max_tokens( $messages, $model_config['max_output'], $model );
 
-        // Build request body (OpenAI uses max_completion_tokens instead of max_tokens)
-        // Note: gpt-5-nano doesn't support custom temperature, only default (1)
+        // Build request body for Responses API
+        // Responses API uses 'input' instead of 'messages'
         $body = array(
             'model'                 => $model,
-            'messages'              => $messages,
+            'input'                 => $messages,
             'max_completion_tokens' => $safe_max_tokens,
         );
 
         // For GPT-5 models with reasoning capability, set minimal reasoning for speed
-        // Chat Completions API uses top-level reasoning_effort parameter
+        // Responses API uses nested reasoning object with effort parameter
         // This dramatically reduces latency from 100+ seconds to ~10-20 seconds
         // Options: minimal, low, medium (default), high
         if ( strpos( $model, 'gpt-5' ) !== false ) {
-            $body['reasoning_effort'] = 'minimal';
+            $body['reasoning'] = array( 'effort' => 'minimal' );
+            // Also use low verbosity for faster, more concise responses
+            $body['text'] = array( 'verbosity' => 'low' );
         }
 
         // Make request
@@ -273,18 +275,19 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
         // Calculate safe max_tokens
         $safe_max_tokens = $this->calculate_safe_max_tokens( $messages, $model_config['max_output'], $model );
 
-        // Build request body
+        // Build request body for Responses API
         $body = array(
             'model'                 => $model,
-            'messages'              => $messages,
+            'input'                 => $messages,
             'max_completion_tokens' => $safe_max_tokens,
         );
 
         // For GPT-5 models, set minimal reasoning for speed
-        // Chat Completions API uses top-level reasoning_effort parameter
+        // Responses API uses nested reasoning object
         // Options: minimal, low, medium (default), high
         if ( strpos( $model, 'gpt-5' ) !== false ) {
-            $body['reasoning_effort'] = 'minimal';
+            $body['reasoning'] = array( 'effort' => 'minimal' );
+            $body['text'] = array( 'verbosity' => 'low' );
         }
 
         WP_AI_Schema_Generator::log( 'Starting content analysis (Pass 1) with OpenAI' );
@@ -401,7 +404,7 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
         // internal reasoning AND output. 500 tokens allows ~64 reasoning + output.
         $body = array(
             'model'                 => $settings['openai_model'] ?? self::DEFAULT_MODEL,
-            'messages'              => array(
+            'input'                 => array(
                 array(
                     'role'    => 'user',
                     'content' => 'Say "OK" and nothing else.',

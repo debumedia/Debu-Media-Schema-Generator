@@ -412,28 +412,33 @@ class WP_AI_Schema_Streaming_Handler {
         }
 
         // Build request body with streaming enabled
-        $body = array(
-            'model'    => $model,
-            'messages' => $messages,
-            'stream'   => true,
-        );
-
         // Provider-specific parameters
         if ( 'openai' === $provider_slug ) {
-            // OpenAI: use max_completion_tokens, skip temperature (some models don't support it)
-            $body['max_completion_tokens'] = $max_tokens;
+            // OpenAI Responses API: use 'input' instead of 'messages'
+            $body = array(
+                'model'                 => $model,
+                'input'                 => $messages,
+                'max_completion_tokens' => $max_tokens,
+                'stream'                => true,
+            );
 
             // For GPT-5 models with reasoning capability, set minimal reasoning for speed
-            // Chat Completions API uses top-level reasoning_effort parameter
+            // Responses API uses nested reasoning object
             // This dramatically reduces latency from 100+ seconds to ~10-20 seconds
             // Options: minimal, low, medium (default), high
             if ( strpos( $model, 'gpt-5' ) !== false ) {
-                $body['reasoning_effort'] = 'minimal';
+                $body['reasoning'] = array( 'effort' => 'minimal' );
+                $body['text'] = array( 'verbosity' => 'low' );
             }
         } else {
-            // DeepSeek: use max_tokens and temperature
-            $body['max_tokens'] = $max_tokens;
-            $body['temperature'] = 0.3;
+            // DeepSeek: use Chat Completions API with 'messages'
+            $body = array(
+                'model'       => $model,
+                'messages'    => $messages,
+                'max_tokens'  => $max_tokens,
+                'temperature' => 0.3,
+                'stream'      => true,
+            );
         }
 
         WP_AI_Schema_Generator::log( "Streaming request to {$endpoint} with model {$model}, max_tokens: {$max_tokens}" );
@@ -451,7 +456,7 @@ class WP_AI_Schema_Streaming_Handler {
     private function get_provider_endpoint( string $provider_slug ): string {
         $endpoints = array(
             'deepseek' => 'https://api.deepseek.com/v1/chat/completions',
-            'openai'   => 'https://api.openai.com/v1/chat/completions',
+            'openai'   => 'https://api.openai.com/v1/responses', // Responses API (recommended for GPT-5)
         );
 
         return $endpoints[ $provider_slug ] ?? $endpoints['openai'];
