@@ -26,6 +26,8 @@
         bindGenerateButton();
         bindCopyButton();
         bindValidateButton();
+        bindDiagnosticsButton();
+        bindVerifyFrontendButton();
     }
 
     /**
@@ -109,6 +111,7 @@
 
         var typeHint = $('#wp_ai_schema_type_hint').val();
         var forceRegenerate = $('#wp_ai_schema_force_regenerate').is(':checked');
+        var fetchFrontend = $('#wp_ai_schema_fetch_frontend').is(':checked');
 
         // Disable button and show loading state
         $button.prop('disabled', true).addClass('generating');
@@ -128,7 +131,8 @@
                 nonce: wpAiSchemaMetabox.nonce,
                 post_id: wpAiSchemaMetabox.post_id,
                 type_hint: typeHint,
-                force: forceRegenerate ? 1 : 0
+                force: forceRegenerate ? 1 : 0,
+                fetch_frontend: fetchFrontend ? 1 : 0
             },
             success: function(response) {
                 // Stop the waiting progress
@@ -161,6 +165,13 @@
 
                     // Reset force regenerate checkbox
                     $('#wp_ai_schema_force_regenerate').prop('checked', false);
+
+                    // Auto-run diagnostics after successful generation (not for cached results)
+                    if (!response.data.cached) {
+                        setTimeout(function() {
+                            runDiagnostics();
+                        }, 500); // Small delay to let UI settle
+                    }
                 } else {
                     handleError(response.data);
                 }
@@ -355,6 +366,327 @@
                 showTemporaryMessage(wpAiSchemaMetabox.i18n.invalid_json + ': ' + e.message, 'error');
             }
         });
+    }
+
+    /**
+     * Bind diagnostics button
+     */
+    function bindDiagnosticsButton() {
+        $('#wp_ai_schema_run_diagnostics').on('click', function(e) {
+            e.preventDefault();
+            runDiagnostics();
+        });
+    }
+
+    /**
+     * Bind verify frontend button
+     */
+    function bindVerifyFrontendButton() {
+        $('#wp_ai_schema_verify_frontend').on('click', function(e) {
+            e.preventDefault();
+            verifyFrontend();
+        });
+    }
+
+    /**
+     * Run diagnostics via AJAX
+     */
+    function runDiagnostics() {
+        var $button = $('#wp_ai_schema_run_diagnostics');
+        var $spinner = $('.ai-jsonld-diagnostic-spinner');
+        var $panel = $('#wp_ai_schema_diagnostic_panel');
+
+        // Disable button and show loading state
+        $button.prop('disabled', true).text(wpAiSchemaMetabox.i18n.running_diagnostics);
+        $spinner.addClass('is-active');
+
+        $.ajax({
+            url: wpAiSchemaMetabox.ajax_url,
+            type: 'POST',
+            timeout: 30000,
+            data: {
+                action: 'wp_ai_schema_diagnose',
+                nonce: wpAiSchemaMetabox.nonce,
+                post_id: wpAiSchemaMetabox.post_id
+            },
+            success: function(response) {
+                if (response.success) {
+                    updateDiagnosticPanel(response.data);
+                } else {
+                    $panel.html('<p class="ai-jsonld-diagnostic-error">' + 
+                        (response.data.message || wpAiSchemaMetabox.i18n.diagnostic_error) + '</p>');
+                }
+            },
+            error: function(xhr, status, error) {
+                $panel.html('<p class="ai-jsonld-diagnostic-error">' + 
+                    wpAiSchemaMetabox.i18n.diagnostic_error + ': ' + error + '</p>');
+            },
+            complete: function() {
+                $spinner.removeClass('is-active');
+                $button.prop('disabled', false).text(wpAiSchemaMetabox.i18n.run_diagnostics);
+            }
+        });
+    }
+
+    /**
+     * Update diagnostic panel with check results
+     */
+    function updateDiagnosticPanel(data) {
+        var $panel = $('#wp_ai_schema_diagnostic_panel');
+        var html = '';
+
+        // Summary
+        var summaryClass = data.will_output ? 'ai-jsonld-summary-success' : 'ai-jsonld-summary-warning';
+        html += '<div class="ai-jsonld-diagnostic-summary ' + summaryClass + '">';
+        html += '<span class="ai-jsonld-summary-icon">' + (data.will_output ? '&#10003;' : '&#9888;') + '</span>';
+        html += '<span class="ai-jsonld-summary-text">' + data.summary + '</span>';
+        html += '</div>';
+
+        // Individual checks
+        html += '<ul class="ai-jsonld-diagnostic-checks">';
+        
+        for (var key in data.checks) {
+            if (data.checks.hasOwnProperty(key)) {
+                var check = data.checks[key];
+                var checkClass = 'ai-jsonld-check-item';
+                var icon = '&#10003;'; // checkmark
+                
+                if (!check.pass) {
+                    if (check.warning) {
+                        checkClass += ' ai-jsonld-check-warning';
+                        icon = '&#9888;'; // warning
+                    } else if (check.info) {
+                        checkClass += ' ai-jsonld-check-info';
+                        icon = '&#8505;'; // info
+                    } else {
+                        checkClass += ' ai-jsonld-check-fail';
+                        icon = '&#10007;'; // X
+                    }
+                } else {
+                    checkClass += ' ai-jsonld-check-pass';
+                }
+
+                html += '<li class="' + checkClass + '">';
+                html += '<span class="ai-jsonld-check-icon">' + icon + '</span>';
+                html += '<span class="ai-jsonld-check-label">' + check.label + '</span>';
+                html += '<span class="ai-jsonld-check-message">' + check.message + '</span>';
+                html += '</li>';
+            }
+        }
+        
+        html += '</ul>';
+
+        $panel.html(html);
+
+        // Enable/disable verify button based on schema existence
+        var hasSchema = data.checks.schema_exists && data.checks.schema_exists.pass;
+        $('#wp_ai_schema_verify_frontend').prop('disabled', !hasSchema);
+    }
+
+    /**
+     * Verify frontend output
+     * First tries JS fetch, then falls back to backend verification
+     */
+    function verifyFrontend() {
+        var $button = $('#wp_ai_schema_verify_frontend');
+        var $spinner = $('.ai-jsonld-diagnostic-spinner');
+        var $result = $('#wp_ai_schema_verify_result');
+
+        // Disable button and show loading state
+        $button.prop('disabled', true).text(wpAiSchemaMetabox.i18n.verifying_frontend);
+        $spinner.addClass('is-active');
+        $result.removeClass('hidden success error warning').html('');
+
+        // Check if post is published - if not, try JS verification only
+        if (wpAiSchemaMetabox.post_status !== 'publish') {
+            // Try JS-based verification for preview/draft
+            $button.text(wpAiSchemaMetabox.i18n.checking_via_js);
+            verifyViaJsFetch().then(function(jsResult) {
+                showVerifyResult(jsResult);
+            }).catch(function() {
+                showVerifyResult({
+                    success: false,
+                    schema_found: false,
+                    message: wpAiSchemaMetabox.i18n.preview_only
+                });
+            }).finally(function() {
+                $spinner.removeClass('is-active');
+                $button.prop('disabled', false).text(wpAiSchemaMetabox.i18n.verify_frontend);
+            });
+            return;
+        }
+
+        // For published posts, try JS first, then fall back to backend
+        verifyViaJsFetch().then(function(jsResult) {
+            if (jsResult.schema_found) {
+                showVerifyResult(jsResult);
+                $spinner.removeClass('is-active');
+                $button.prop('disabled', false).text(wpAiSchemaMetabox.i18n.verify_frontend);
+            } else {
+                // JS didn't find it, try backend verification
+                verifyViaBackend();
+            }
+        }).catch(function() {
+            // JS fetch failed, try backend
+            verifyViaBackend();
+        });
+    }
+
+    /**
+     * Verify via JavaScript fetch (for same-origin pages)
+     */
+    function verifyViaJsFetch() {
+        return new Promise(function(resolve, reject) {
+            var url = wpAiSchemaMetabox.post_url;
+            
+            if (!url) {
+                reject(new Error('No URL'));
+                return;
+            }
+
+            fetch(url, {
+                credentials: 'same-origin',
+                cache: 'no-store'
+            })
+            .then(function(response) {
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+                return response.text();
+            })
+            .then(function(html) {
+                // Look for JSON-LD script tags
+                var pattern = /<script\s+type=["']application\/ld\+json["']>([\s\S]*?)<\/script>/gi;
+                var matches = [];
+                var match;
+                
+                while ((match = pattern.exec(html)) !== null) {
+                    matches.push(match[1].trim());
+                }
+
+                if (matches.length === 0) {
+                    resolve({
+                        success: true,
+                        schema_found: false,
+                        schema_match: false,
+                        message: wpAiSchemaMetabox.i18n.js_verify_not_found,
+                        via_js: true
+                    });
+                    return;
+                }
+
+                // Get stored schema from preview textarea for comparison
+                var storedSchema = $('#wp_ai_schema_schema_preview').val();
+                var storedParsed = null;
+                
+                try {
+                    storedParsed = JSON.parse(storedSchema);
+                } catch (e) {
+                    // Can't parse stored schema
+                }
+
+                // Check if any found schema matches
+                for (var i = 0; i < matches.length; i++) {
+                    try {
+                        var foundParsed = JSON.parse(matches[i]);
+                        if (storedParsed && JSON.stringify(foundParsed) === JSON.stringify(storedParsed)) {
+                            resolve({
+                                success: true,
+                                schema_found: true,
+                                schema_match: true,
+                                message: wpAiSchemaMetabox.i18n.js_verify_success,
+                                via_js: true
+                            });
+                            return;
+                        }
+                    } catch (e) {
+                        // Continue to next match
+                    }
+                }
+
+                // Found schemas but none match
+                resolve({
+                    success: true,
+                    schema_found: true,
+                    schema_match: false,
+                    message: wpAiSchemaMetabox.i18n.schema_mismatch,
+                    via_js: true
+                });
+            })
+            .catch(function(error) {
+                reject(error);
+            });
+        });
+    }
+
+    /**
+     * Verify via backend AJAX
+     */
+    function verifyViaBackend() {
+        var $button = $('#wp_ai_schema_verify_frontend');
+        var $spinner = $('.ai-jsonld-diagnostic-spinner');
+
+        $.ajax({
+            url: wpAiSchemaMetabox.ajax_url,
+            type: 'POST',
+            timeout: 30000,
+            data: {
+                action: 'wp_ai_schema_verify_frontend',
+                nonce: wpAiSchemaMetabox.nonce,
+                post_id: wpAiSchemaMetabox.post_id
+            },
+            success: function(response) {
+                if (response.success) {
+                    showVerifyResult(response.data);
+                } else {
+                    showVerifyResult({
+                        success: false,
+                        schema_found: false,
+                        message: response.data.message || wpAiSchemaMetabox.i18n.verify_error
+                    });
+                }
+            },
+            error: function(xhr, status, error) {
+                showVerifyResult({
+                    success: false,
+                    schema_found: false,
+                    message: wpAiSchemaMetabox.i18n.verify_error + ': ' + error
+                });
+            },
+            complete: function() {
+                $spinner.removeClass('is-active');
+                $button.prop('disabled', false).text(wpAiSchemaMetabox.i18n.verify_frontend);
+            }
+        });
+    }
+
+    /**
+     * Show verification result
+     */
+    function showVerifyResult(result) {
+        var $result = $('#wp_ai_schema_verify_result');
+        var resultClass = '';
+        var icon = '';
+
+        if (result.schema_found && result.schema_match) {
+            resultClass = 'success';
+            icon = '&#10003;';
+        } else if (result.schema_found && !result.schema_match) {
+            resultClass = 'warning';
+            icon = '&#9888;';
+        } else {
+            resultClass = 'error';
+            icon = '&#10007;';
+        }
+
+        var html = '<span class="ai-jsonld-verify-icon">' + icon + '</span>';
+        html += '<span class="ai-jsonld-verify-message">' + result.message + '</span>';
+        
+        if (result.use_js_verify) {
+            html += '<br><small>' + wpAiSchemaMetabox.i18n.preview_only + '</small>';
+        }
+
+        $result.removeClass('hidden success error warning').addClass(resultClass).html(html);
     }
 
     // Initialize on document ready

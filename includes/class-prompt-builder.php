@@ -34,12 +34,13 @@ class WP_AI_Schema_Prompt_Builder {
     /**
      * Build the complete prompt payload
      *
-     * @param int   $post_id           Post ID.
-     * @param array $settings          Plugin settings.
-     * @param int   $max_content_chars Maximum content characters (from provider model config).
+     * @param int         $post_id           Post ID.
+     * @param array       $settings          Plugin settings.
+     * @param int         $max_content_chars Maximum content characters (from provider model config).
+     * @param string|null $override_content  Optional content to use instead of post content (for frontend fetch).
      * @return array Prompt payload.
      */
-    public function build_payload( int $post_id, array $settings, int $max_content_chars = 50000 ): array {
+    public function build_payload( int $post_id, array $settings, int $max_content_chars = 50000, ?string $override_content = null ): array {
         $post = get_post( $post_id );
 
         if ( ! $post ) {
@@ -49,7 +50,7 @@ class WP_AI_Schema_Prompt_Builder {
         $type_hint = $this->get_type_hint( $post_id );
 
         return array(
-            'page'            => $this->build_page_data( $post, $max_content_chars ),
+            'page'            => $this->build_page_data( $post, $max_content_chars, $override_content ),
             'site'            => $this->build_site_data(),
             'business'        => $this->build_business_data( $settings ),
             'typeHint'        => $type_hint,
@@ -77,13 +78,21 @@ class WP_AI_Schema_Prompt_Builder {
     /**
      * Build page data array
      *
-     * @param WP_Post $post               Post object.
-     * @param int     $max_content_chars  Maximum content characters.
+     * @param WP_Post     $post              Post object.
+     * @param int         $max_content_chars Maximum content characters.
+     * @param string|null $override_content  Optional content override (from frontend fetch).
      * @return array Page data.
      */
-    private function build_page_data( WP_Post $post, int $max_content_chars ): array {
+    private function build_page_data( WP_Post $post, int $max_content_chars, ?string $override_content = null ): array {
+        // Use override content if provided, otherwise get best available content
+        if ( ! empty( $override_content ) ) {
+            $raw_content = $override_content;
+        } else {
+            $raw_content = $this->content_processor->get_best_content( $post->ID );
+        }
+
         // Process content with structure preservation for better schema generation
-        $content_result = $this->content_processor->process_with_structure( $post->post_content, $max_content_chars );
+        $content_result = $this->content_processor->process_with_structure( $raw_content, $max_content_chars );
 
         // Get featured image data
         $featured_image = $this->get_featured_image_data( $post->ID );

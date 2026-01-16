@@ -72,14 +72,31 @@ class WP_AI_Schema_Metabox {
         $schema       = get_post_meta( $post->ID, '_wp_ai_schema_schema', true );
         $type_hint    = get_post_meta( $post->ID, '_wp_ai_schema_type_hint', true ) ?: 'auto';
         $is_empty     = $this->content_processor->is_content_empty( $post->ID );
+        $content_info = $this->content_processor->get_content_info( $post->ID );
 
         // Nonce for security
         wp_nonce_field( 'wp_ai_schema_metabox', 'wp_ai_schema_metabox_nonce' );
         ?>
         <div class="ai-jsonld-metabox">
+            <?php if ( $content_info['builder'] ) : ?>
+                <div class="ai-jsonld-notice ai-jsonld-notice-info">
+                    <?php
+                    printf(
+                        /* translators: 1: page builder name, 2: content characters */
+                        esc_html__( 'Page Builder Detected: %1$s. Content extracted: %2$s characters.', 'wp-ai-seo-schema-generator' ),
+                        '<strong>' . esc_html( $content_info['builder_label'] ) . '</strong>',
+                        number_format( max( $content_info['standard_length'], $content_info['rendered_length'], $content_info['builder_length'] ) )
+                    );
+                    ?>
+                </div>
+            <?php endif; ?>
+
             <?php if ( $is_empty ) : ?>
                 <div class="ai-jsonld-notice ai-jsonld-notice-warning">
                     <?php esc_html_e( 'This page has insufficient content to generate meaningful schema.', 'wp-ai-seo-schema-generator' ); ?>
+                    <?php if ( $content_info['can_fetch_frontend'] ) : ?>
+                        <br><small><?php esc_html_e( 'Try checking "Fetch from frontend" below if you\'re using a page builder.', 'wp-ai-seo-schema-generator' ); ?></small>
+                    <?php endif; ?>
                 </div>
             <?php endif; ?>
 
@@ -102,6 +119,12 @@ class WP_AI_Schema_Metabox {
                         <input type="checkbox" id="wp_ai_schema_force_regenerate" />
                         <?php esc_html_e( 'Force regenerate (ignore cache)', 'wp-ai-seo-schema-generator' ); ?>
                     </label>
+                    <?php if ( 'publish' === $post->post_status ) : ?>
+                        <label title="<?php esc_attr_e( 'Fetches the live page to extract content. Useful for page builders like Bricks, Elementor, etc.', 'wp-ai-seo-schema-generator' ); ?>">
+                            <input type="checkbox" id="wp_ai_schema_fetch_frontend" />
+                            <?php esc_html_e( 'Fetch from frontend', 'wp-ai-seo-schema-generator' ); ?>
+                        </label>
+                    <?php endif; ?>
                 </div>
 
                 <div class="ai-jsonld-actions">
@@ -137,6 +160,28 @@ class WP_AI_Schema_Metabox {
             </div>
 
             <div id="wp_ai_schema_message" class="ai-jsonld-message hidden"></div>
+
+            <!-- Diagnostic Panel -->
+            <div class="ai-jsonld-diagnostic-section">
+                <div class="ai-jsonld-diagnostic-header">
+                    <h4><?php esc_html_e( 'Frontend Output Status', 'wp-ai-seo-schema-generator' ); ?></h4>
+                    <div class="ai-jsonld-diagnostic-actions">
+                        <button type="button" id="wp_ai_schema_run_diagnostics" class="button button-small">
+                            <?php esc_html_e( 'Run Diagnostics', 'wp-ai-seo-schema-generator' ); ?>
+                        </button>
+                        <button type="button" id="wp_ai_schema_verify_frontend" class="button button-small" <?php disabled( empty( $schema ) ); ?>>
+                            <?php esc_html_e( 'Verify Frontend', 'wp-ai-seo-schema-generator' ); ?>
+                        </button>
+                        <span class="ai-jsonld-diagnostic-spinner spinner"></span>
+                    </div>
+                </div>
+                <div id="wp_ai_schema_diagnostic_panel" class="ai-jsonld-diagnostic-panel">
+                    <p class="ai-jsonld-diagnostic-hint">
+                        <?php esc_html_e( 'Click "Run Diagnostics" to check if schema will appear on the frontend.', 'wp-ai-seo-schema-generator' ); ?>
+                    </p>
+                </div>
+                <div id="wp_ai_schema_verify_result" class="ai-jsonld-verify-result hidden"></div>
+            </div>
         </div>
         <?php
     }
@@ -271,27 +316,43 @@ class WP_AI_Schema_Metabox {
             'ai-jsonld-metabox',
             'wpAiSchemaMetabox',
             array(
-                'ajax_url' => admin_url( 'admin-ajax.php' ),
-                'nonce'    => wp_create_nonce( 'wp_ai_schema_generate_' . $post->ID ),
-                'post_id'  => $post->ID,
-                'i18n'     => array(
-                    'generating'      => __( 'Generating...', 'wp-ai-seo-schema-generator' ),
-                    'generate'        => __( 'Generate JSON-LD', 'wp-ai-seo-schema-generator' ),
-                    'preparing'       => __( 'Preparing content...', 'wp-ai-seo-schema-generator' ),
-                    'sending'         => __( 'Sending to AI...', 'wp-ai-seo-schema-generator' ),
-                    'waiting'         => __( 'Waiting for response...', 'wp-ai-seo-schema-generator' ),
-                    'processing'      => __( 'Processing schema...', 'wp-ai-seo-schema-generator' ),
-                    'success'         => __( 'Schema generated successfully!', 'wp-ai-seo-schema-generator' ),
-                    'error'           => __( 'Error generating schema', 'wp-ai-seo-schema-generator' ),
-                    'timeout'         => __( 'Request timed out. The AI may be busy - please try again.', 'wp-ai-seo-schema-generator' ),
-                    'copied'          => __( 'Copied to clipboard!', 'wp-ai-seo-schema-generator' ),
-                    'copy_failed'     => __( 'Failed to copy', 'wp-ai-seo-schema-generator' ),
-                    'valid_json'      => __( 'Valid JSON', 'wp-ai-seo-schema-generator' ),
-                    'invalid_json'    => __( 'Invalid JSON', 'wp-ai-seo-schema-generator' ),
-                    'cooldown'        => __( 'Please wait %d seconds...', 'wp-ai-seo-schema-generator' ),
-                    'rate_limited'    => __( 'Rate limited. Please try again later.', 'wp-ai-seo-schema-generator' ),
-                    'schema_current'  => __( 'Schema is current', 'wp-ai-seo-schema-generator' ),
-                    'schema_outdated' => __( 'Content has changed since last generation', 'wp-ai-seo-schema-generator' ),
+                'ajax_url'   => admin_url( 'admin-ajax.php' ),
+                'nonce'      => wp_create_nonce( 'wp_ai_schema_generate_' . $post->ID ),
+                'post_id'    => $post->ID,
+                'post_url'   => get_permalink( $post->ID ),
+                'post_status' => $post->post_status,
+                'i18n'       => array(
+                    'generating'           => __( 'Generating...', 'wp-ai-seo-schema-generator' ),
+                    'generate'             => __( 'Generate JSON-LD', 'wp-ai-seo-schema-generator' ),
+                    'preparing'            => __( 'Preparing content...', 'wp-ai-seo-schema-generator' ),
+                    'sending'              => __( 'Sending to AI...', 'wp-ai-seo-schema-generator' ),
+                    'waiting'              => __( 'Waiting for response...', 'wp-ai-seo-schema-generator' ),
+                    'processing'           => __( 'Processing schema...', 'wp-ai-seo-schema-generator' ),
+                    'success'              => __( 'Schema generated successfully!', 'wp-ai-seo-schema-generator' ),
+                    'error'                => __( 'Error generating schema', 'wp-ai-seo-schema-generator' ),
+                    'timeout'              => __( 'Request timed out. The AI may be busy - please try again.', 'wp-ai-seo-schema-generator' ),
+                    'copied'               => __( 'Copied to clipboard!', 'wp-ai-seo-schema-generator' ),
+                    'copy_failed'          => __( 'Failed to copy', 'wp-ai-seo-schema-generator' ),
+                    'valid_json'           => __( 'Valid JSON', 'wp-ai-seo-schema-generator' ),
+                    'invalid_json'         => __( 'Invalid JSON', 'wp-ai-seo-schema-generator' ),
+                    'cooldown'             => __( 'Please wait %d seconds...', 'wp-ai-seo-schema-generator' ),
+                    'rate_limited'         => __( 'Rate limited. Please try again later.', 'wp-ai-seo-schema-generator' ),
+                    'schema_current'       => __( 'Schema is current', 'wp-ai-seo-schema-generator' ),
+                    'schema_outdated'      => __( 'Content has changed since last generation', 'wp-ai-seo-schema-generator' ),
+                    // Diagnostic strings
+                    'running_diagnostics'  => __( 'Running diagnostics...', 'wp-ai-seo-schema-generator' ),
+                    'run_diagnostics'      => __( 'Run Diagnostics', 'wp-ai-seo-schema-generator' ),
+                    'verifying_frontend'   => __( 'Verifying frontend...', 'wp-ai-seo-schema-generator' ),
+                    'verify_frontend'      => __( 'Verify Frontend', 'wp-ai-seo-schema-generator' ),
+                    'diagnostic_error'     => __( 'Error running diagnostics', 'wp-ai-seo-schema-generator' ),
+                    'verify_error'         => __( 'Error verifying frontend', 'wp-ai-seo-schema-generator' ),
+                    'schema_verified'      => __( 'Schema verified on frontend!', 'wp-ai-seo-schema-generator' ),
+                    'schema_not_found'     => __( 'Schema not found on frontend', 'wp-ai-seo-schema-generator' ),
+                    'schema_mismatch'      => __( 'Schema found but does not match', 'wp-ai-seo-schema-generator' ),
+                    'checking_via_js'      => __( 'Checking via browser...', 'wp-ai-seo-schema-generator' ),
+                    'js_verify_success'    => __( 'Schema found via browser check!', 'wp-ai-seo-schema-generator' ),
+                    'js_verify_not_found'  => __( 'Schema not found via browser check', 'wp-ai-seo-schema-generator' ),
+                    'preview_only'         => __( 'Post is not published. Use preview to verify.', 'wp-ai-seo-schema-generator' ),
                 ),
             )
         );

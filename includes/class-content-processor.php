@@ -26,6 +26,11 @@ class WP_AI_Schema_Content_Processor {
     const SENTENCE_BREAK_THRESHOLD = 0.7;
 
     /**
+     * Minimum content length to consider non-empty
+     */
+    const MIN_CONTENT_LENGTH = 50;
+
+    /**
      * Prepare content for LLM processing (plain text)
      *
      * @param string $content Raw content (HTML).
@@ -243,6 +248,7 @@ class WP_AI_Schema_Content_Processor {
      * Generate a content hash for caching
      *
      * Hash includes provider and model so cache is invalidated when switching providers.
+     * Now also includes page builder content for accurate cache invalidation.
      *
      * @param int   $post_id  Post ID.
      * @param array $settings Plugin settings.
@@ -262,9 +268,23 @@ class WP_AI_Schema_Content_Processor {
         $model_key   = $provider . '_model';
         $model       = $settings[ $model_key ] ?? '';
 
+        // Get the best content (includes page builder content)
+        $best_content = $this->get_best_content( $post_id );
+
+        // Also include builder-specific meta for cache invalidation
+        $builder = $this->detect_page_builder( $post_id );
+        $builder_meta = '';
+
+        if ( 'elementor' === $builder ) {
+            $builder_meta = get_post_meta( $post_id, '_elementor_data', true );
+        } elseif ( 'bricks' === $builder ) {
+            $builder_meta = maybe_serialize( get_post_meta( $post_id, '_bricks_page_content_2', true ) );
+        }
+
         $hash_input = wp_json_encode(
             array(
-                'content'          => $post->post_content,
+                'content'          => $best_content,
+                'builder_meta'     => $builder_meta ? md5( $builder_meta ) : '', // Hash the meta to keep size reasonable
                 'title'            => $post->post_title,
                 'excerpt'          => $post->post_excerpt,
                 'modified'         => $post->post_modified,
@@ -345,6 +365,8 @@ class WP_AI_Schema_Content_Processor {
     /**
      * Check if content is empty or too short
      *
+     * Now checks for page builder content as well.
+     *
      * @param int $post_id Post ID.
      * @return bool True if content is empty or too short.
      */
@@ -355,10 +377,670 @@ class WP_AI_Schema_Content_Processor {
             return true;
         }
 
+        // First try standard content
         $content = $this->prepare( $post->post_content );
 
-        // Consider content empty if less than 50 characters
-        return mb_strlen( $content ) < 50;
+        if ( mb_strlen( $content ) >= self::MIN_CONTENT_LENGTH ) {
+            return false;
+        }
+
+        // Check for page builder content
+        $builder_content = $this->get_page_builder_content( $post_id );
+
+        if ( ! empty( $builder_content ) ) {
+            $prepared = $this->prepare( $builder_content );
+            if ( mb_strlen( $prepared ) >= self::MIN_CONTENT_LENGTH ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Get the best available content for a post
+     *
+     * Tries multiple sources: standard content, rendered content, page builder data.
+     *
+     * @param int $post_id Post ID.
+     * @return string The best available content.
+     */
+    public function get_best_content( int $post_id ): string {
+        $post = get_post( $post_id );
+
+        if ( ! $post ) {
+            return '';
+        }
+
+        // 1. Try standard post_content first
+        $standard_content = $post->post_content;
+        $standard_prepared = $this->prepare( $standard_content );
+
+        // 2. Try to get rendered content (applies shortcodes and some builders)
+        $rendered_content = $this->get_rendered_content( $post_id );
+        $rendered_prepared = $this->prepare( $rendered_content );
+
+        // 3. Try page builder specific extraction
+        $builder_content = $this->get_page_builder_content( $post_id );
+        $builder_prepared = $this->prepare( $builder_content );
+
+        // Return the longest/most complete content
+        $contents = array(
+            'standard' => array(
+                'raw'      => $standard_content,
+                'prepared' => $standard_prepared,
+                'length'   => mb_strlen( $standard_prepared ),
+            ),
+            'rendered' => array(
+                'raw'      => $rendered_content,
+                'prepared' => $rendered_prepared,
+                'length'   => mb_strlen( $rendered_prepared ),
+            ),
+            'builder'  => array(
+                'raw'      => $builder_content,
+                'prepared' => $builder_prepared,
+                'length'   => mb_strlen( $builder_prepared ),
+            ),
+        );
+
+        // Find the source with the most content
+        $best_source = 'standard';
+        $best_length = $contents['standard']['length'];
+
+        foreach ( $contents as $source => $data ) {
+            if ( $data['length'] > $best_length ) {
+                $best_source = $source;
+                $best_length = $data['length'];
+            }
+        }
+
+        WP_AI_Schema_Generator::log(
+            sprintf(
+                'Content source for post %d: %s (%d chars). Standard: %d, Rendered: %d, Builder: %d',
+                $post_id,
+                $best_source,
+                $best_length,
+                $contents['standard']['length'],
+                $contents['rendered']['length'],
+                $contents['builder']['length']
+            )
+        );
+
+        return $contents[ $best_source ]['raw'];
+    }
+
+    /**
+     * Get rendered content by applying WordPress filters
+     *
+     * This handles shortcodes and some page builders that hook into the_content.
+     *
+     * @param int $post_id Post ID.
+     * @return string Rendered content.
+     */
+    public function get_rendered_content( int $post_id ): string {
+        $post = get_post( $post_id );
+
+        if ( ! $post ) {
+            return '';
+        }
+
+        // Set up post data for filters that depend on it
+        $original_post = $GLOBALS['post'] ?? null;
+        $GLOBALS['post'] = $post;
+        setup_postdata( $post );
+
+        // Get content and apply the_content filters
+        // This will process shortcodes and many page builder outputs
+        $content = $post->post_content;
+
+        // Apply the_content filters but remove actions that might cause issues
+        remove_filter( 'the_content', 'wpautop' ); // Don't need auto paragraphs
+        $content = apply_filters( 'the_content', $content );
+        add_filter( 'the_content', 'wpautop' ); // Restore
+
+        // Restore original post
+        if ( $original_post ) {
+            $GLOBALS['post'] = $original_post;
+            setup_postdata( $original_post );
+        } else {
+            wp_reset_postdata();
+        }
+
+        return $content;
+    }
+
+    /**
+     * Detect which page builder is used for a post
+     *
+     * @param int $post_id Post ID.
+     * @return string|null Builder name or null if none detected.
+     */
+    public function detect_page_builder( int $post_id ): ?string {
+        // Elementor
+        if ( get_post_meta( $post_id, '_elementor_edit_mode', true ) === 'builder' ) {
+            return 'elementor';
+        }
+
+        // Bricks Builder
+        if ( get_post_meta( $post_id, '_bricks_page_content_2', true ) ) {
+            return 'bricks';
+        }
+
+        // Beaver Builder
+        if ( get_post_meta( $post_id, '_fl_builder_enabled', true ) ) {
+            return 'beaver';
+        }
+
+        // Divi Builder
+        if ( get_post_meta( $post_id, '_et_pb_use_builder', true ) === 'on' ) {
+            return 'divi';
+        }
+
+        // WPBakery / Visual Composer (uses shortcodes in content)
+        $post = get_post( $post_id );
+        if ( $post && preg_match( '/\[vc_row/', $post->post_content ) ) {
+            return 'wpbakery';
+        }
+
+        // Oxygen Builder
+        if ( get_post_meta( $post_id, 'ct_builder_shortcodes', true ) ) {
+            return 'oxygen';
+        }
+
+        // Brizy
+        if ( get_post_meta( $post_id, 'brizy_post_uid', true ) ) {
+            return 'brizy';
+        }
+
+        return null;
+    }
+
+    /**
+     * Get content from page builder meta data
+     *
+     * @param int $post_id Post ID.
+     * @return string Extracted content from page builder.
+     */
+    public function get_page_builder_content( int $post_id ): string {
+        $builder = $this->detect_page_builder( $post_id );
+
+        if ( ! $builder ) {
+            return '';
+        }
+
+        switch ( $builder ) {
+            case 'elementor':
+                return $this->extract_elementor_content( $post_id );
+
+            case 'bricks':
+                return $this->extract_bricks_content( $post_id );
+
+            case 'beaver':
+                return $this->extract_beaver_content( $post_id );
+
+            case 'divi':
+                return $this->extract_divi_content( $post_id );
+
+            case 'oxygen':
+                return $this->extract_oxygen_content( $post_id );
+
+            case 'brizy':
+                return $this->extract_brizy_content( $post_id );
+
+            case 'wpbakery':
+                // WPBakery uses shortcodes, rely on rendered content
+                return $this->get_rendered_content( $post_id );
+
+            default:
+                return '';
+        }
+    }
+
+    /**
+     * Extract content from Elementor data
+     *
+     * @param int $post_id Post ID.
+     * @return string Extracted content.
+     */
+    private function extract_elementor_content( int $post_id ): string {
+        $data = get_post_meta( $post_id, '_elementor_data', true );
+
+        if ( empty( $data ) ) {
+            return '';
+        }
+
+        // Decode if JSON string
+        if ( is_string( $data ) ) {
+            $data = json_decode( $data, true );
+        }
+
+        if ( ! is_array( $data ) ) {
+            return '';
+        }
+
+        return $this->extract_text_from_elementor_elements( $data );
+    }
+
+    /**
+     * Recursively extract text from Elementor elements
+     *
+     * @param array $elements Elementor elements array.
+     * @return string Extracted text content.
+     */
+    private function extract_text_from_elementor_elements( array $elements ): string {
+        $text_parts = array();
+
+        foreach ( $elements as $element ) {
+            // Extract text from settings
+            if ( isset( $element['settings'] ) ) {
+                $settings = $element['settings'];
+
+                // Common text fields in Elementor widgets
+                $text_fields = array(
+                    'title', 'editor', 'description', 'text', 'content',
+                    'heading', 'sub_heading', 'title_text', 'description_text',
+                    'button_text', 'link_text', 'testimonial_content',
+                    'testimonial_name', 'testimonial_job', 'alert_title',
+                    'alert_description', 'tab_title', 'tab_content',
+                    'accordion_title', 'accordion_content', 'item_description',
+                    'field_label', 'placeholder', 'price', 'period',
+                );
+
+                foreach ( $text_fields as $field ) {
+                    if ( isset( $settings[ $field ] ) && is_string( $settings[ $field ] ) ) {
+                        $text_parts[] = $settings[ $field ];
+                    }
+                }
+
+                // Handle repeater fields (lists, FAQs, etc.)
+                $repeater_fields = array( 'tabs', 'items', 'slides', 'social_icon_list', 'icon_list', 'faq_list' );
+                foreach ( $repeater_fields as $repeater ) {
+                    if ( isset( $settings[ $repeater ] ) && is_array( $settings[ $repeater ] ) ) {
+                        foreach ( $settings[ $repeater ] as $item ) {
+                            if ( is_array( $item ) ) {
+                                foreach ( $text_fields as $field ) {
+                                    if ( isset( $item[ $field ] ) && is_string( $item[ $field ] ) ) {
+                                        $text_parts[] = $item[ $field ];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Recursively process nested elements
+            if ( isset( $element['elements'] ) && is_array( $element['elements'] ) ) {
+                $nested_text = $this->extract_text_from_elementor_elements( $element['elements'] );
+                if ( ! empty( $nested_text ) ) {
+                    $text_parts[] = $nested_text;
+                }
+            }
+        }
+
+        return implode( "\n\n", array_filter( $text_parts ) );
+    }
+
+    /**
+     * Extract content from Bricks Builder data
+     *
+     * @param int $post_id Post ID.
+     * @return string Extracted content.
+     */
+    private function extract_bricks_content( int $post_id ): string {
+        $data = get_post_meta( $post_id, '_bricks_page_content_2', true );
+
+        if ( empty( $data ) ) {
+            // Try older meta key
+            $data = get_post_meta( $post_id, '_bricks_page_content', true );
+        }
+
+        if ( empty( $data ) || ! is_array( $data ) ) {
+            return '';
+        }
+
+        return $this->extract_text_from_bricks_elements( $data );
+    }
+
+    /**
+     * Recursively extract text from Bricks elements
+     *
+     * @param array $elements Bricks elements array.
+     * @return string Extracted text content.
+     */
+    private function extract_text_from_bricks_elements( array $elements ): string {
+        $text_parts = array();
+
+        foreach ( $elements as $element ) {
+            // Extract text from settings
+            if ( isset( $element['settings'] ) ) {
+                $settings = $element['settings'];
+
+                // Common text fields in Bricks
+                $text_fields = array(
+                    'text', 'title', 'subtitle', 'content', 'description',
+                    'heading', 'tag', 'label', 'button', 'link_text',
+                    'author', 'quote', 'cite', 'name', 'job', 'company',
+                    'price', 'currency', 'period', 'features',
+                );
+
+                foreach ( $text_fields as $field ) {
+                    if ( isset( $settings[ $field ] ) ) {
+                        $value = $settings[ $field ];
+                        if ( is_string( $value ) ) {
+                            $text_parts[] = $value;
+                        } elseif ( is_array( $value ) ) {
+                            // Handle arrays (like feature lists)
+                            $text_parts[] = $this->flatten_array_to_text( $value );
+                        }
+                    }
+                }
+
+                // Handle items/repeater fields
+                if ( isset( $settings['items'] ) && is_array( $settings['items'] ) ) {
+                    foreach ( $settings['items'] as $item ) {
+                        if ( is_array( $item ) ) {
+                            $text_parts[] = $this->flatten_array_to_text( $item );
+                        }
+                    }
+                }
+            }
+
+            // Recursively process children
+            if ( isset( $element['children'] ) && is_array( $element['children'] ) ) {
+                // Children might be IDs or nested elements
+                // For now, skip - Bricks stores flat structure with parent references
+            }
+        }
+
+        return implode( "\n\n", array_filter( $text_parts ) );
+    }
+
+    /**
+     * Flatten an array to text, extracting string values
+     *
+     * @param array $array Array to flatten.
+     * @return string Flattened text.
+     */
+    private function flatten_array_to_text( array $array ): string {
+        $texts = array();
+
+        array_walk_recursive(
+            $array,
+            function ( $value ) use ( &$texts ) {
+                if ( is_string( $value ) && ! empty( trim( $value ) ) ) {
+                    // Skip URLs and technical strings
+                    if ( ! preg_match( '/^(https?:\/\/|#|data:|javascript:)/i', $value ) ) {
+                        $texts[] = $value;
+                    }
+                }
+            }
+        );
+
+        return implode( ' ', $texts );
+    }
+
+    /**
+     * Extract content from Beaver Builder data
+     *
+     * @param int $post_id Post ID.
+     * @return string Extracted content.
+     */
+    private function extract_beaver_content( int $post_id ): string {
+        $data = get_post_meta( $post_id, '_fl_builder_data', true );
+
+        if ( empty( $data ) || ! is_array( $data ) ) {
+            return '';
+        }
+
+        $text_parts = array();
+
+        foreach ( $data as $node ) {
+            if ( isset( $node->settings ) ) {
+                $settings = (array) $node->settings;
+
+                $text_fields = array(
+                    'text', 'heading', 'content', 'description', 'title',
+                    'btn_text', 'link_text', 'testimonial', 'name', 'company',
+                );
+
+                foreach ( $text_fields as $field ) {
+                    if ( isset( $settings[ $field ] ) && is_string( $settings[ $field ] ) ) {
+                        $text_parts[] = $settings[ $field ];
+                    }
+                }
+            }
+        }
+
+        return implode( "\n\n", array_filter( $text_parts ) );
+    }
+
+    /**
+     * Extract content from Divi Builder
+     *
+     * Divi stores content in post_content with shortcodes.
+     *
+     * @param int $post_id Post ID.
+     * @return string Extracted content.
+     */
+    private function extract_divi_content( int $post_id ): string {
+        // Divi primarily uses shortcodes, so rely on rendered content
+        return $this->get_rendered_content( $post_id );
+    }
+
+    /**
+     * Extract content from Oxygen Builder
+     *
+     * @param int $post_id Post ID.
+     * @return string Extracted content.
+     */
+    private function extract_oxygen_content( int $post_id ): string {
+        $shortcodes = get_post_meta( $post_id, 'ct_builder_shortcodes', true );
+
+        if ( empty( $shortcodes ) ) {
+            return '';
+        }
+
+        // Oxygen stores as shortcodes, render them
+        return do_shortcode( $shortcodes );
+    }
+
+    /**
+     * Extract content from Brizy
+     *
+     * @param int $post_id Post ID.
+     * @return string Extracted content.
+     */
+    private function extract_brizy_content( int $post_id ): string {
+        // Try to get compiled HTML
+        $compiled = get_post_meta( $post_id, 'brizy_post_compiled_html', true );
+
+        if ( ! empty( $compiled ) ) {
+            return $compiled;
+        }
+
+        // Fall back to editor data
+        $editor_data = get_post_meta( $post_id, 'brizy_post_editor_data', true );
+
+        if ( empty( $editor_data ) ) {
+            return '';
+        }
+
+        // Decode and extract text
+        if ( is_string( $editor_data ) ) {
+            $editor_data = json_decode( $editor_data, true );
+        }
+
+        if ( is_array( $editor_data ) ) {
+            return $this->flatten_array_to_text( $editor_data );
+        }
+
+        return '';
+    }
+
+    /**
+     * Fetch content directly from the frontend
+     *
+     * This is the most reliable method but requires an HTTP request.
+     *
+     * @param int $post_id Post ID.
+     * @return string|WP_Error Frontend content or error.
+     */
+    public function fetch_frontend_content( int $post_id ) {
+        $url = get_permalink( $post_id );
+
+        if ( ! $url ) {
+            return new WP_Error( 'no_url', __( 'Could not get post URL.', 'wp-ai-seo-schema-generator' ) );
+        }
+
+        $response = wp_remote_get(
+            $url,
+            array(
+                'timeout'    => 30,
+                'sslverify'  => false,
+                'user-agent' => 'WP AI Schema Content Fetcher',
+            )
+        );
+
+        if ( is_wp_error( $response ) ) {
+            return $response;
+        }
+
+        $status_code = wp_remote_retrieve_response_code( $response );
+
+        if ( $status_code !== 200 ) {
+            return new WP_Error(
+                'http_error',
+                sprintf( __( 'HTTP %d error fetching page.', 'wp-ai-seo-schema-generator' ), $status_code )
+            );
+        }
+
+        $body = wp_remote_retrieve_body( $response );
+
+        // Extract main content area (try common selectors)
+        $content = $this->extract_main_content_from_html( $body );
+
+        return $content;
+    }
+
+    /**
+     * Extract main content from HTML, excluding header/footer/sidebar
+     *
+     * @param string $html Full page HTML.
+     * @return string Main content HTML.
+     */
+    private function extract_main_content_from_html( string $html ): string {
+        // Try to find main content area using common selectors
+        $selectors = array(
+            '/<main[^>]*>(.*?)<\/main>/is',
+            '/<article[^>]*>(.*?)<\/article>/is',
+            '/<div[^>]*(?:id|class)=["\'][^"\']*(?:content|main|primary|entry)[^"\']*["\'][^>]*>(.*?)<\/div>/is',
+            '/<div[^>]*class=["\'][^"\']*(?:brxe-|elementor-widget-)[^"\']*["\'][^>]*>(.*?)<\/div>/is',
+        );
+
+        foreach ( $selectors as $pattern ) {
+            if ( preg_match( $pattern, $html, $matches ) ) {
+                return $matches[1];
+            }
+        }
+
+        // Fallback: remove obvious non-content areas
+        $html = preg_replace( '/<header[^>]*>.*?<\/header>/is', '', $html );
+        $html = preg_replace( '/<footer[^>]*>.*?<\/footer>/is', '', $html );
+        $html = preg_replace( '/<nav[^>]*>.*?<\/nav>/is', '', $html );
+        $html = preg_replace( '/<aside[^>]*>.*?<\/aside>/is', '', $html );
+        $html = preg_replace( '/<script[^>]*>.*?<\/script>/is', '', $html );
+        $html = preg_replace( '/<style[^>]*>.*?<\/style>/is', '', $html );
+
+        // Extract body content
+        if ( preg_match( '/<body[^>]*>(.*?)<\/body>/is', $html, $matches ) ) {
+            return $matches[1];
+        }
+
+        return $html;
+    }
+
+    /**
+     * Get content info for debugging/display
+     *
+     * @param int $post_id Post ID.
+     * @return array Content information.
+     */
+    public function get_content_info( int $post_id ): array {
+        $post = get_post( $post_id );
+
+        if ( ! $post ) {
+            return array(
+                'has_content'  => false,
+                'builder'      => null,
+                'sources'      => array(),
+            );
+        }
+
+        $builder = $this->detect_page_builder( $post_id );
+
+        $standard_content = $this->prepare( $post->post_content );
+        $rendered_content = $this->prepare( $this->get_rendered_content( $post_id ) );
+        $builder_content  = $this->prepare( $this->get_page_builder_content( $post_id ) );
+
+        return array(
+            'has_content'       => ! $this->is_content_empty( $post_id ),
+            'builder'           => $builder,
+            'builder_label'     => $this->get_builder_label( $builder ),
+            'standard_length'   => mb_strlen( $standard_content ),
+            'rendered_length'   => mb_strlen( $rendered_content ),
+            'builder_length'    => mb_strlen( $builder_content ),
+            'best_source'       => $this->get_best_content_source( $post_id ),
+            'can_fetch_frontend' => ( 'publish' === $post->post_status ),
+        );
+    }
+
+    /**
+     * Get human-readable builder label
+     *
+     * @param string|null $builder Builder slug.
+     * @return string Builder label.
+     */
+    private function get_builder_label( ?string $builder ): string {
+        $labels = array(
+            'elementor' => 'Elementor',
+            'bricks'    => 'Bricks Builder',
+            'beaver'    => 'Beaver Builder',
+            'divi'      => 'Divi Builder',
+            'wpbakery'  => 'WPBakery',
+            'oxygen'    => 'Oxygen Builder',
+            'brizy'     => 'Brizy',
+        );
+
+        return $labels[ $builder ] ?? __( 'None detected', 'wp-ai-seo-schema-generator' );
+    }
+
+    /**
+     * Get the name of the best content source
+     *
+     * @param int $post_id Post ID.
+     * @return string Source name.
+     */
+    private function get_best_content_source( int $post_id ): string {
+        $post = get_post( $post_id );
+
+        if ( ! $post ) {
+            return 'none';
+        }
+
+        $standard = mb_strlen( $this->prepare( $post->post_content ) );
+        $rendered = mb_strlen( $this->prepare( $this->get_rendered_content( $post_id ) ) );
+        $builder  = mb_strlen( $this->prepare( $this->get_page_builder_content( $post_id ) ) );
+
+        if ( $builder >= $standard && $builder >= $rendered ) {
+            return 'builder';
+        }
+
+        if ( $rendered >= $standard ) {
+            return 'rendered';
+        }
+
+        return 'standard';
     }
 
     /**

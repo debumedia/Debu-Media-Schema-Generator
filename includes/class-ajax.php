@@ -85,6 +85,8 @@ class WP_AI_Schema_Ajax {
      */
     private function init_hooks() {
         add_action( 'wp_ajax_wp_ai_schema_generate', array( $this, 'handle_generate' ) );
+        add_action( 'wp_ajax_wp_ai_schema_diagnose', array( $this, 'handle_diagnose' ) );
+        add_action( 'wp_ajax_wp_ai_schema_verify_frontend', array( $this, 'handle_verify_frontend' ) );
     }
 
     /**
@@ -114,11 +116,12 @@ class WP_AI_Schema_Ajax {
             ) );
         }
 
-        // Get force flag
-        $force = ! empty( $_POST['force'] );
+        // Get flags
+        $force          = ! empty( $_POST['force'] );
+        $fetch_frontend = ! empty( $_POST['fetch_frontend'] );
 
         // Generate schema
-        $result = $this->generate_schema( $post_id, $force );
+        $result = $this->generate_schema( $post_id, $force, $fetch_frontend );
 
         if ( $result['success'] ) {
             wp_send_json_success( $result );
@@ -130,11 +133,12 @@ class WP_AI_Schema_Ajax {
     /**
      * Generate schema for a post
      *
-     * @param int  $post_id Post ID.
-     * @param bool $force   Force regeneration.
+     * @param int  $post_id        Post ID.
+     * @param bool $force          Force regeneration.
+     * @param bool $fetch_frontend Fetch content from frontend (for page builders).
      * @return array Result array.
      */
-    public function generate_schema( int $post_id, bool $force = false ): array {
+    public function generate_schema( int $post_id, bool $force = false, bool $fetch_frontend = false ): array {
         $settings = WP_AI_Schema_Generator::get_settings();
 
         // Check per-post cooldown
@@ -163,11 +167,29 @@ class WP_AI_Schema_Ajax {
             );
         }
 
-        // Check if content is empty
-        if ( $this->content_processor->is_content_empty( $post_id ) ) {
+        // If fetch_frontend is requested, try to get content from the live page
+        $frontend_content = null;
+        if ( $fetch_frontend ) {
+            $post = get_post( $post_id );
+            if ( $post && 'publish' === $post->post_status ) {
+                $result = $this->content_processor->fetch_frontend_content( $post_id );
+                if ( ! is_wp_error( $result ) && ! empty( $result ) ) {
+                    $frontend_content = $result;
+                    WP_AI_Schema_Generator::log( sprintf( 'Fetched frontend content for post %d: %d chars', $post_id, mb_strlen( $result ) ) );
+                } else {
+                    WP_AI_Schema_Generator::log(
+                        sprintf( 'Failed to fetch frontend for post %d: %s', $post_id, is_wp_error( $result ) ? $result->get_error_message() : 'empty result' ),
+                        'warning'
+                    );
+                }
+            }
+        }
+
+        // Check if content is empty (unless we have frontend content)
+        if ( empty( $frontend_content ) && $this->content_processor->is_content_empty( $post_id ) ) {
             return array(
                 'success' => false,
-                'message' => __( 'Page content is too short to generate meaningful schema.', 'wp-ai-seo-schema-generator' ),
+                'message' => __( 'Page content is too short to generate meaningful schema. Try enabling "Fetch from frontend" if using a page builder.', 'wp-ai-seo-schema-generator' ),
             );
         }
 
@@ -222,7 +244,8 @@ class WP_AI_Schema_Ajax {
         $max_content_chars = $provider->get_max_content_chars( $model );
 
         // Build payload with provider-specific content limit
-        $payload = $this->prompt_builder->build_payload( $post_id, $settings, $max_content_chars );
+        // Pass frontend content if we fetched it
+        $payload = $this->prompt_builder->build_payload( $post_id, $settings, $max_content_chars, $frontend_content );
 
         if ( empty( $payload ) ) {
             $this->save_error( $post_id, __( 'Failed to build prompt payload.', 'wp-ai-seo-schema-generator' ) );
@@ -320,5 +343,99 @@ class WP_AI_Schema_Ajax {
         $remaining = $timeout - time();
 
         return max( 0, $remaining );
+    }
+
+    /**
+     * Handle AJAX diagnose request
+     *
+     * Runs diagnostic checks to determine why schema might not appear on frontend.
+     */
+    public function handle_diagnose() {
+        // Get and sanitize post ID
+        $post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+
+        if ( ! $post_id ) {
+            wp_send_json_error( array(
+                'message' => __( 'Invalid post ID.', 'wp-ai-seo-schema-generator' ),
+            ) );
+        }
+
+        // Verify nonce
+        if ( ! check_ajax_referer( 'wp_ai_schema_generate_' . $post_id, 'nonce', false ) ) {
+            wp_send_json_error( array(
+                'message' => __( 'Security check failed.', 'wp-ai-seo-schema-generator' ),
+            ) );
+        }
+
+        // Check capabilities
+        if ( ! current_user_can( 'edit_post', $post_id ) ) {
+            wp_send_json_error( array(
+                'message' => __( 'You do not have permission to view this post.', 'wp-ai-seo-schema-generator' ),
+            ) );
+        }
+
+        // Get the schema output component
+        $schema_output = wp_ai_schema_generator()->get_component( 'schema_output' );
+
+        if ( ! $schema_output ) {
+            wp_send_json_error( array(
+                'message' => __( 'Schema output component not available.', 'wp-ai-seo-schema-generator' ),
+            ) );
+        }
+
+        // Run diagnostics
+        $diagnostics = $schema_output->diagnose( $post_id );
+
+        wp_send_json_success( $diagnostics );
+    }
+
+    /**
+     * Handle AJAX verify frontend request
+     *
+     * Fetches the frontend page and checks if JSON-LD schema is present.
+     */
+    public function handle_verify_frontend() {
+        // Get and sanitize post ID
+        $post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+
+        if ( ! $post_id ) {
+            wp_send_json_error( array(
+                'message' => __( 'Invalid post ID.', 'wp-ai-seo-schema-generator' ),
+            ) );
+        }
+
+        // Verify nonce
+        if ( ! check_ajax_referer( 'wp_ai_schema_generate_' . $post_id, 'nonce', false ) ) {
+            wp_send_json_error( array(
+                'message' => __( 'Security check failed.', 'wp-ai-seo-schema-generator' ),
+            ) );
+        }
+
+        // Check capabilities
+        if ( ! current_user_can( 'edit_post', $post_id ) ) {
+            wp_send_json_error( array(
+                'message' => __( 'You do not have permission to view this post.', 'wp-ai-seo-schema-generator' ),
+            ) );
+        }
+
+        // Get the schema output component
+        $schema_output = wp_ai_schema_generator()->get_component( 'schema_output' );
+
+        if ( ! $schema_output ) {
+            wp_send_json_error( array(
+                'message' => __( 'Schema output component not available.', 'wp-ai-seo-schema-generator' ),
+            ) );
+        }
+
+        // Verify frontend
+        $result = $schema_output->verify_frontend( $post_id );
+
+        if ( $result['success'] ) {
+            wp_send_json_success( $result );
+        } else {
+            // Even failures should be returned as success with the result data
+            // so the JS can handle them appropriately
+            wp_send_json_success( $result );
+        }
     }
 }
