@@ -82,11 +82,16 @@ class WP_AI_Schema_Content_Analyzer {
             );
         }
 
-        // Get content
+        // Get raw HTML content
         if ( ! empty( $override_content ) ) {
-            $raw_content = $override_content;
+            $raw_html = $override_content;
         } else {
-            $raw_content = $this->content_processor->get_best_content( $post_id );
+            // Fetch frontend content for best results with page builders
+            $raw_html = $this->content_processor->fetch_frontend_content( $post_id );
+            if ( is_wp_error( $raw_html ) || empty( $raw_html ) ) {
+                // Fallback to post content
+                $raw_html = $this->content_processor->get_best_content( $post_id );
+            }
         }
 
         // Get model config for content limits
@@ -94,11 +99,18 @@ class WP_AI_Schema_Content_Analyzer {
         $model             = $settings[ $model_key ] ?? '';
         $max_content_chars = $provider->get_max_content_chars( $model );
 
-        // Process content with structure preservation
-        $content_result = $this->content_processor->process_with_structure( $raw_content, $max_content_chars );
+        // Minimal HTML cleaning - only remove scripts/styles, keep structure
+        $cleaned_html = $this->content_processor->prepare_raw_html( $raw_html );
 
-        // Build analysis payload
-        $payload = $this->build_analysis_payload( $post, $content_result, $settings );
+        // Truncate if needed (but keep HTML intact)
+        $original_length = mb_strlen( $cleaned_html );
+        if ( $original_length > $max_content_chars ) {
+            $cleaned_html = mb_substr( $cleaned_html, 0, $max_content_chars );
+            WP_AI_Schema_Generator::log( sprintf( 'HTML truncated from %d to %d chars', $original_length, $max_content_chars ) );
+        }
+
+        // Build analysis payload with raw HTML
+        $payload = $this->build_analysis_payload_html( $post, $cleaned_html, $original_length, $settings );
 
         // Call provider to analyze
         $result = $provider->analyze_content( $payload, $settings );
@@ -130,25 +142,25 @@ class WP_AI_Schema_Content_Analyzer {
     }
 
     /**
-     * Build payload for content analysis request
+     * Build payload for content analysis request with raw HTML
      *
-     * @param WP_Post $post           Post object.
-     * @param array   $content_result Processed content result.
-     * @param array   $settings       Plugin settings.
+     * @param WP_Post $post            Post object.
+     * @param string  $html_content    Cleaned HTML content.
+     * @param int     $original_length Original content length before truncation.
+     * @param array   $settings        Plugin settings.
      * @return array Analysis payload.
      */
-    private function build_analysis_payload( WP_Post $post, array $content_result, array $settings ): array {
+    private function build_analysis_payload_html( WP_Post $post, string $html_content, int $original_length, array $settings ): array {
         $type_hint = get_post_meta( $post->ID, '_wp_ai_schema_type_hint', true );
 
         return array(
             'page' => array(
-                'title'            => get_the_title( $post->ID ),
-                'url'              => get_permalink( $post->ID ),
-                'pageType'         => $post->post_type,
-                'content'          => $content_result['content'],
-                'contentTruncated' => $content_result['truncated'],
-                'originalLength'   => $content_result['original_length'],
-                'excerpt'          => $post->post_excerpt ?: null,
+                'title'          => get_the_title( $post->ID ),
+                'url'            => get_permalink( $post->ID ),
+                'pageType'       => $post->post_type,
+                'content'        => $html_content,
+                'originalLength' => $original_length,
+                'excerpt'        => $post->post_excerpt ?: null,
             ),
             'site' => array(
                 'name'        => get_bloginfo( 'name' ),
@@ -280,48 +292,89 @@ class WP_AI_Schema_Content_Analyzer {
      * @return string System prompt.
      */
     public static function get_analysis_system_prompt(): string {
-        return 'You are a meticulous content analysis AI. Your job is to read through a webpage\'s content from TOP to BOTTOM and extract EVERY piece of structured information you find.
+        return 'You are an expert HTML content analyzer. You will receive RAW HTML from a webpage. Your job is to analyze the HTML structure, classes, and content to extract ALL structured information.
 
-CRITICAL INSTRUCTION: You must find and extract ALL items of each type. If there are 5 testimonials, extract all 5. If there are 10 services, extract all 10. DO NOT stop at the first one. DO NOT summarize or consolidate multiple items into one.
+CRITICAL: You must find and extract ALL items of each type. If there are 5 testimonials, extract all 5. If there are 10 services, extract all 10. DO NOT stop at the first one.
 
 OUTPUT: Valid JSON only. No markdown, no code fences, no explanations.
 
-PROCESS THE CONTENT IN ORDER:
-1. Read through the entire content from start to finish
-2. As you encounter each element (testimonial, service, FAQ, etc.), add it to the appropriate array
-3. Maintain the order in which items appear on the page
-4. Count items as you go - at the end, verify you captured all of them
+## HOW TO ANALYZE HTML
 
-JSON STRUCTURE:
+You are receiving actual HTML with tags, classes, and IDs intact. Use these to identify content:
+
+### TESTIMONIALS - Look for:
+- Elements with classes containing: testimonial, review, quote, feedback, client-say, customer-review, rating
+- <blockquote> elements (often used for quotes)
+- <cite> elements (author attribution)
+- Repeated card/item structures with quote text + person name
+- Star rating elements (★, star icons, rating classes)
+- Sections with IDs/classes like: testimonials, reviews, what-clients-say, feedback
+
+### FAQs - Look for:
+- <details>/<summary> HTML5 elements
+- Accordion structures (classes containing: accordion, faq, collapse, toggle)
+- Repeated question/answer patterns
+- Elements with classes: faq, question, answer, q-and-a
+
+### SERVICES - Look for:
+- Repeated card structures with title + description
+- Sections with classes: services, offerings, what-we-do, our-services
+- Feature lists within service blocks
+
+### TEAM MEMBERS - Look for:
+- Repeated person cards with photo, name, title
+- Classes containing: team, staff, member, person, about-us
+- Bio/description text associated with names
+
+### CONTACT INFO - Look for:
+- Email addresses (mailto: links or text)
+- Phone numbers (tel: links or text patterns)
+- Address blocks
+- Classes: contact, address, location
+
+### PAGE STRUCTURE - Look at:
+- <header>, <main>, <footer>, <section>, <article> tags
+- <nav> for navigation (skip this content)
+- <h1>-<h6> for section headings
+- Class names that indicate sections (hero, about, services, etc.)
+
+## LANGUAGE AGNOSTIC
+Do NOT rely on English keywords. Look at HTML STRUCTURE and PATTERNS:
+- Repeated elements = list of items (services, testimonials, team, etc.)
+- Quote marks around text + name nearby = testimonial
+- Question mark in heading + text below = FAQ
+- Card layouts with images + titles = services or team
+
+## JSON OUTPUT STRUCTURE
 {
     "page_type": "service_page|about_page|contact_page|blog_post|product_page|landing_page|faq_page|testimonials_page|other",
-    "page_summary": "Brief 1-2 sentence summary",
-    "content_sections_found": ["hero", "services", "testimonials", "faq", "contact", "team", "etc"],
+    "page_summary": "Brief 1-2 sentence summary of what this page is about",
+    "sections_detected": ["hero", "about", "services", "testimonials", "faq", "team", "contact", "footer"],
     
     "organization": {
-        "name": "Business name",
-        "description": "Business description",
-        "industry": "Industry/sector"
+        "name": "Business/company name found in content",
+        "description": "Business description if found",
+        "industry": "Industry/sector if identifiable"
     },
     
     "services": [
         {
             "position": 1,
             "name": "Service name",
-            "description": "Full service description",
-            "features": ["feature1", "feature2"],
-            "price": "Price if mentioned",
-            "price_currency": "Currency code"
+            "description": "Full description text",
+            "features": ["feature 1", "feature 2"],
+            "price": "Price if shown",
+            "price_currency": "Currency"
         }
     ],
     
     "testimonials": [
         {
             "position": 1,
-            "quote": "COMPLETE testimonial text - copy the FULL quote exactly as written",
+            "quote": "The COMPLETE testimonial text exactly as written",
             "author_name": "Person name",
             "author_title": "Job title if shown",
-            "author_company": "Company if shown",
+            "author_company": "Company name if shown",
             "rating": 5,
             "rating_max": 5
         }
@@ -330,8 +383,8 @@ JSON STRUCTURE:
     "faqs": [
         {
             "position": 1,
-            "question": "The exact question",
-            "answer": "The exact answer"
+            "question": "The exact question text",
+            "answer": "The exact answer text"
         }
     ],
     
@@ -340,23 +393,20 @@ JSON STRUCTURE:
             "position": 1,
             "name": "Full name",
             "job_title": "Role/position",
-            "description": "Bio text",
-            "email": "Email if shown",
-            "phone": "Phone if shown"
+            "description": "Bio text if present"
         }
     ],
     
     "contact_info": {
-        "email": "Email address",
-        "phone": "Phone number",
+        "email": "Email if found",
+        "phone": "Phone if found",
         "address": {
-            "street": "Street",
+            "street": "Street address",
             "city": "City",
             "state": "State/Province",
-            "postal_code": "ZIP/Postal",
+            "postal_code": "ZIP/Postal code",
             "country": "Country"
-        },
-        "hours": "Business hours"
+        }
     },
     
     "products": [
@@ -365,36 +415,14 @@ JSON STRUCTURE:
             "name": "Product name",
             "description": "Product description",
             "price": "Price",
-            "price_currency": "Currency",
-            "sku": "SKU"
-        }
-    ],
-    
-    "events": [
-        {
-            "position": 1,
-            "name": "Event name",
-            "description": "Description",
-            "start_date": "Date/time",
-            "end_date": "End date if available",
-            "location": "Location"
-        }
-    ],
-    
-    "how_to_steps": [
-        {
-            "step_number": 1,
-            "title": "Step title",
-            "description": "Step instructions"
+            "price_currency": "Currency"
         }
     ],
     
     "statistics": {
         "client_count": "e.g., 500+ clients",
         "years_in_business": "e.g., 15 years",
-        "projects_completed": "e.g., 1000+ projects",
-        "awards": ["Award 1", "Award 2"],
-        "certifications": ["Cert 1"]
+        "projects_completed": "e.g., 1000+ projects"
     },
     
     "item_counts": {
@@ -406,38 +434,19 @@ JSON STRUCTURE:
     }
 }
 
-TESTIMONIAL DETECTION - VERY IMPORTANT:
-Look for testimonials in these formats:
-- [TESTIMONIAL START] ... [TESTIMONIAL END] markers (most reliable)
-- [QUOTE START] ... [QUOTE END] markers  
-- Text that appears to be a customer quote/review
-- Sections under headings like "Testimonials", "What Our Clients Say", "Reviews", "Client Feedback"
-- Quoted text followed by a person\'s name
-- Star ratings associated with text
+## EXTRACTION RULES
+1. Extract ALL items - count them and verify in item_counts
+2. Preserve exact text - copy quotes exactly, do not paraphrase
+3. Use position numbers to maintain the order items appear
+4. Omit empty sections - only include what you actually find
+5. NEVER invent information - only extract what exists in the HTML
 
-For EACH testimonial you find:
-- Copy the COMPLETE quote text - do not truncate or summarize
-- Extract the author name exactly as shown
-- Include job title and company if present
-- Include rating if shown (convert stars to numbers)
-
-EXTRACTION RULES:
-1. Extract ALL items - if you see 3 testimonials, output 3 testimonials
-2. Preserve exact text - do not paraphrase quotes or descriptions
-3. Include position numbers to maintain order
-4. Only include sections that have data (omit empty arrays)
-5. NEVER invent information - only extract what is explicitly present
-6. The "item_counts" section helps verify you found everything
-
-CONTENT STRUCTURE MARKERS:
-- [TESTIMONIAL START/END] = testimonial/review (EXTRACT ALL)
-- [FAQ ITEM START/END] = FAQ Q&A pair (EXTRACT ALL)  
-- [QUOTE START/END] = general quote
-- ## [Heading] ## = section heading
-- [LIST START/END] = bullet list
-- [SECTION] = content section boundary
-
-FINAL CHECK: Before outputting, count items in each array and put counts in "item_counts". If the page clearly shows multiple testimonials but you only have 1, you missed some - go back and find them all.';
+## FINAL CHECK
+Before outputting, verify:
+- Did you check the entire HTML from top to bottom?
+- Did you count all testimonials? All services? All FAQs?
+- Are your item_counts accurate?
+- Did you extract the COMPLETE text of each quote?';
     }
 
     /**
@@ -451,70 +460,42 @@ FINAL CHECK: Before outputting, count items in each array and put counts in "ite
         $site_data     = $payload['site'] ?? array();
         $business_data = $payload['businessData'] ?? null;
         $type_hint     = $payload['typeHint'] ?? 'auto';
+        $content       = $page_data['content'] ?? '';
 
-        $message = 'Analyze this webpage content and extract ALL structured information.
+        $message = 'Analyze the following HTML and extract ALL structured information.
 
-IMPORTANT: Find and extract EVERY testimonial, service, FAQ, team member, etc. Do not stop at just one of each type.
-
-PAGE INFORMATION:
-- Title: ' . ( $page_data['title'] ?? 'Unknown' ) . '
-- URL: ' . ( $page_data['url'] ?? 'Unknown' ) . '
-- Type: ' . ( $page_data['pageType'] ?? 'page' ) . '
-
-SITE INFORMATION:
-- Site Name: ' . ( $site_data['name'] ?? 'Unknown' ) . '
-- Site URL: ' . ( $site_data['url'] ?? 'Unknown' ) . '
-- Site Description: ' . ( $site_data['description'] ?? '' ) . '
+PAGE: ' . ( $page_data['title'] ?? 'Unknown' ) . '
+URL: ' . ( $page_data['url'] ?? 'Unknown' ) . '
+SITE: ' . ( $site_data['name'] ?? 'Unknown' ) . '
 ';
 
-        if ( ! empty( $business_data ) ) {
-            $message .= '
-KNOWN BUSINESS INFO (verified):
-- Business Name: ' . ( $business_data['name'] ?? '' ) . '
-- Description: ' . ( $business_data['description'] ?? '' ) . '
-- Email: ' . ( $business_data['email'] ?? '' ) . '
-- Phone: ' . ( $business_data['phone'] ?? '' ) . '
+        if ( ! empty( $business_data['name'] ) ) {
+            $message .= 'BUSINESS: ' . $business_data['name'] . '
 ';
         }
 
         if ( 'auto' !== $type_hint ) {
-            $message .= '
-PAGE TYPE HINT: ' . $type_hint . '
+            $message .= 'PAGE TYPE HINT: ' . $type_hint . '
 ';
         }
 
-        // Count markers in content to help the AI know what to expect
-        $content         = $page_data['content'] ?? '';
-        $testimonial_markers = substr_count( $content, '[TESTIMONIAL START]' );
-        $quote_markers       = substr_count( $content, '[QUOTE START]' );
-        $faq_markers         = substr_count( $content, '[FAQ ITEM START]' );
+        // Estimate content size for context
+        $html_size_kb = round( strlen( $content ) / 1024, 1 );
+        $message .= 'HTML SIZE: ' . $html_size_kb . ' KB
 
-        if ( $testimonial_markers > 0 || $quote_markers > 0 || $faq_markers > 0 ) {
-            $message .= '
-CONTENT MARKERS DETECTED:';
-            if ( $testimonial_markers > 0 ) {
-                $message .= '
-- ' . $testimonial_markers . ' [TESTIMONIAL] markers found - extract ALL ' . $testimonial_markers . ' testimonials';
-            }
-            if ( $quote_markers > 0 ) {
-                $message .= '
-- ' . $quote_markers . ' [QUOTE] markers found - extract ALL ' . $quote_markers . ' quotes';
-            }
-            if ( $faq_markers > 0 ) {
-                $message .= '
-- ' . $faq_markers . ' [FAQ ITEM] markers found - extract ALL ' . $faq_markers . ' FAQ items';
-            }
-            $message .= '
 ';
-        }
 
-        $message .= '
-PAGE CONTENT (read through completely, extract ALL items):
-"""
+        $message .= 'HTML CONTENT:
 ' . $content . '
-"""
 
-TASK: Read the content from start to finish. For each testimonial, service, FAQ, team member, etc. you encounter, add it to the appropriate array. Count your items at the end and include in "item_counts".
+TASK: Analyze this HTML structure. Look at the tags, classes, and content patterns to identify:
+- Testimonials/reviews (look for quote patterns, star ratings, author names)
+- Services (repeated card structures)
+- FAQs (accordion patterns, Q&A structures)
+- Team members (person cards with names and titles)
+- Contact information (emails, phones, addresses)
+
+Extract ALL items you find. Count them and report in item_counts.
 
 Output valid JSON only.';
 

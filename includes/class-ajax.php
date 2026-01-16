@@ -374,24 +374,27 @@ class WP_AI_Schema_Ajax {
             );
         }
 
-        // If fetch_frontend is requested, try to get content from the live page
+        // For two-pass mode, we always try to fetch frontend content first
+        // This gives us the full rendered HTML which the AI can analyze
         $frontend_content = null;
-        if ( $fetch_frontend ) {
-            $post = get_post( $post_id );
-            if ( $post && 'publish' === $post->post_status ) {
-                $result = $this->content_processor->fetch_frontend_content( $post_id );
-                if ( ! is_wp_error( $result ) && ! empty( $result ) ) {
-                    $frontend_content = $result;
-                    WP_AI_Schema_Generator::log( sprintf( 'Two-pass: Fetched frontend content for post %d: %d chars', $post_id, mb_strlen( $result ) ) );
-                }
+        $post             = get_post( $post_id );
+
+        if ( $post && 'publish' === $post->post_status ) {
+            // Always try frontend fetch for two-pass (AI analyzes raw HTML)
+            $result = $this->content_processor->fetch_frontend_content( $post_id );
+            if ( ! is_wp_error( $result ) && ! empty( $result ) ) {
+                $frontend_content = $result;
+                WP_AI_Schema_Generator::log( sprintf( 'Two-pass: Fetched frontend HTML for post %d: %d chars', $post_id, mb_strlen( $result ) ) );
+            } else {
+                WP_AI_Schema_Generator::log( 'Two-pass: Frontend fetch failed, will use post content', 'warning' );
             }
         }
 
-        // Check if content is empty
+        // Check if content is empty (only if we couldn't get frontend content)
         if ( empty( $frontend_content ) && $this->content_processor->is_content_empty( $post_id ) ) {
             return array(
                 'success' => false,
-                'message' => __( 'Page content is too short to generate meaningful schema.', 'wp-ai-seo-schema-generator' ),
+                'message' => __( 'Page content is too short to generate meaningful schema. Make sure the page is published.', 'wp-ai-seo-schema-generator' ),
             );
         }
 
@@ -447,11 +450,18 @@ class WP_AI_Schema_Ajax {
 
         WP_AI_Schema_Generator::log( sprintf( 'Starting two-pass schema generation for post %d', $post_id ) );
 
+        // Log content source for debugging
+        $content_source = ! empty( $frontend_content ) ? 'frontend HTML' : 'post content';
+        $content_size   = ! empty( $frontend_content ) ? mb_strlen( $frontend_content ) : 0;
+        WP_AI_Schema_Generator::log( sprintf( 'Content source: %s (%d chars)', $content_source, $content_size ) );
+        $debug_timing['content_source']   = $content_source;
+        $debug_timing['raw_html_size_kb'] = round( $content_size / 1024, 1 );
+
         // ========================
         // PASS 1: Content Analysis
         // ========================
         $pass1_start = microtime( true );
-        WP_AI_Schema_Generator::log( 'Pass 1: Analyzing content...' );
+        WP_AI_Schema_Generator::log( 'Pass 1: Analyzing raw HTML with AI...' );
 
         $analysis_result = $this->content_analyzer->analyze( $post_id, $settings, $frontend_content );
 

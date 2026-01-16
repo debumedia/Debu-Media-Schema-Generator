@@ -201,6 +201,16 @@
             success: function(response) {
                 // Debug: Log full response
                 debugLog('Full Response', response);
+
+                // Debug: Log timing info prominently if available
+                if (response.data && response.data.debug && response.data.debug.timing) {
+                    var t = response.data.debug.timing;
+                    console.log('%c[AI Schema Timing]', 'color: #28a745; font-weight: bold; font-size: 14px;');
+                    console.log('  Pass 1 (Content Analysis): ' + (t.pass1_seconds || '?') + 's');
+                    console.log('  Pass 2 (Schema Generation): ' + (t.pass2_seconds || '?') + 's');
+                    console.log('  Pass 2 Payload Size: ' + (t.pass2_payload_kb || '?') + ' KB');
+                    console.log('  Total Time: ' + (t.total_seconds || '?') + 's');
+                }
                 // Stop the waiting progress
                 stopProgress();
 
