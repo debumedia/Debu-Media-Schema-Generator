@@ -54,11 +54,23 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
      * To add a new model, add an entry to this array.
      */
     const MODELS = array(
+        'gpt-4o-mini' => array(
+            'name'              => 'GPT-4o Mini (Fast)',
+            'context_window'    => 128000,
+            'max_output'        => 16384,
+            'max_content_chars' => 80000,
+        ),
+        'gpt-4o' => array(
+            'name'              => 'GPT-4o (Balanced)',
+            'context_window'    => 128000,
+            'max_output'        => 16384,
+            'max_content_chars' => 80000,
+        ),
         'gpt-5-nano' => array(
-            'name'              => 'GPT-5 Nano',
-            'context_window'    => 400000,   // 400K total (272K input + 128K output)
-            'max_output'        => 128000,   // Model's hard max output limit
-            'max_content_chars' => 200000,   // ~57K tokens, well under 272K input limit
+            'name'              => 'GPT-5 Nano (Slow - Reasoning)',
+            'context_window'    => 400000,
+            'max_output'        => 128000,
+            'max_content_chars' => 200000,
         ),
     );
 

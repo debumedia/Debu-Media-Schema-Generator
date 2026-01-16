@@ -297,9 +297,16 @@
 
         switch (eventType) {
             case 'keepalive':
-                // Just update elapsed time to show activity
-                var currentText = $button.text().replace(/\s*\([^)]*\)$/, '');
-                $button.text(currentText + ' (' + elapsed + 's)');
+                // Update elapsed time and show waiting message
+                var waitMessages = [
+                    'AI is thinking',
+                    'Processing content',
+                    'Analyzing structure',
+                    'Understanding page',
+                    'Working on it'
+                ];
+                var msgIndex = Math.floor(elapsed / 10) % waitMessages.length;
+                updateStreamingStatus(waitMessages[msgIndex] + '... (' + elapsed + 's)');
                 break;
 
             case 'status':
@@ -314,11 +321,12 @@
                 break;
 
             case 'content':
-                // Show that content is being generated
+                // Show that content is being received with character count
+                var chars = data.total || 0;
                 if (data.phase === 'pass1') {
-                    updateStreamingStatus('AI analyzing... (' + elapsed + 's)');
+                    updateStreamingStatus('AI analyzing... ' + chars + ' chars (' + elapsed + 's)');
                 } else if (data.phase === 'pass2') {
-                    updateStreamingStatus('Generating schema... (' + elapsed + 's)');
+                    updateStreamingStatus('Building schema... ' + chars + ' chars (' + elapsed + 's)');
                 }
                 break;
 
