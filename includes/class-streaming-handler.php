@@ -275,6 +275,10 @@ class WP_AI_Schema_Streaming_Handler {
             $analysis_data,
             $settings
         );
+        
+        // Debug: Log analyzed data size
+        $analyzed_json_size = strlen( wp_json_encode( $analysis_data ) );
+        WP_AI_Schema_Generator::log( "Analyzed content size: " . round( $analyzed_json_size / 1024, 2 ) . " KB" );
 
         // Stream the schema generation
         $schema_result = $this->stream_provider_request(
@@ -445,10 +449,31 @@ class WP_AI_Schema_Streaming_Handler {
             );
         }
 
-        WP_AI_Schema_Generator::log( "Streaming request to {$endpoint} with model {$model}, max_tokens: {$max_tokens}" );
+        // Debug logging for performance analysis
+        $payload_size_kb = round( strlen( wp_json_encode( $body ) ) / 1024, 2 );
+        $messages_size_kb = round( strlen( wp_json_encode( $messages ) ) / 1024, 2 );
+        
+        WP_AI_Schema_Generator::log( "=== {$phase} Streaming Request ===" );
+        WP_AI_Schema_Generator::log( "Endpoint: {$endpoint}" );
+        WP_AI_Schema_Generator::log( "Model: {$model}" );
+        WP_AI_Schema_Generator::log( "Max tokens: {$max_tokens}" );
+        WP_AI_Schema_Generator::log( "Total payload size: {$payload_size_kb} KB" );
+        WP_AI_Schema_Generator::log( "Messages size: {$messages_size_kb} KB" );
+        WP_AI_Schema_Generator::log( "Request params: " . wp_json_encode( array_keys( $body ) ) );
+        
+        if ( 'openai' === $provider_slug && isset( $body['reasoning'] ) ) {
+            WP_AI_Schema_Generator::log( "Reasoning effort: " . $body['reasoning']['effort'] );
+        }
+
+        $request_start = microtime( true );
 
         // Make streaming request
-        return $this->make_streaming_request( $endpoint, $api_key, $body, $phase );
+        $result = $this->make_streaming_request( $endpoint, $api_key, $body, $phase );
+        
+        $request_duration = round( microtime( true ) - $request_start, 2 );
+        WP_AI_Schema_Generator::log( "{$phase} completed in {$request_duration}s" );
+        
+        return $result;
     }
 
     /**
