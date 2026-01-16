@@ -290,14 +290,31 @@ class WP_AI_Schema_Streaming_Handler {
             'payload_built'        => ! empty( $schema_payload ),
         ) );
 
-        // Debug checkpoint 4
+        // Force flush to ensure event is sent
+        if ( function_exists( 'fastcgi_finish_request' ) ) {
+            fastcgi_finish_request();
+        } else {
+            flush();
+        }
+
+        // Debug checkpoint 4 - check PHP limits
+        $memory_used_mb = round( memory_get_usage() / 1024 / 1024, 2 );
+        $memory_limit = ini_get( 'memory_limit' );
+        $time_limit = ini_get( 'max_execution_time' );
+        
         $this->send_sse_event( 'debug', array( 
-            'checkpoint' => 'RIGHT BEFORE stream_provider_request call for pass2',
-            'has_provider' => isset( $provider ),
-            'has_api_key' => ! empty( $api_key ),
-            'has_settings' => ! empty( $settings ),
-            'has_payload' => ! empty( $schema_payload ),
+            'checkpoint'        => 'RIGHT BEFORE stream_provider_request call for pass2',
+            'has_provider'      => isset( $provider ),
+            'has_api_key'       => ! empty( $api_key ),
+            'has_settings'      => ! empty( $settings ),
+            'has_payload'       => ! empty( $schema_payload ),
+            'memory_used_mb'    => $memory_used_mb,
+            'memory_limit'      => $memory_limit,
+            'time_limit'        => $time_limit,
         ) );
+
+        // Another flush
+        flush();
 
         // Stream the schema generation - wrap in error handling
         try {
