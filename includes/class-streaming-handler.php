@@ -415,11 +415,12 @@ class WP_AI_Schema_Streaming_Handler {
         // Provider-specific parameters
         if ( 'openai' === $provider_slug ) {
             // OpenAI Responses API: use 'input' instead of 'messages'
+            // and 'max_output_tokens' instead of 'max_completion_tokens'
             $body = array(
-                'model'                 => $model,
-                'input'                 => $messages,
-                'max_completion_tokens' => $max_tokens,
-                'stream'                => true,
+                'model'             => $model,
+                'input'             => $messages,
+                'max_output_tokens' => $max_tokens,
+                'stream'            => true,
             );
 
             // For GPT-5 models with reasoning capability, set minimal reasoning for speed

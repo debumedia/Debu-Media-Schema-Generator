@@ -185,10 +185,11 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
 
         // Build request body for Responses API
         // Responses API uses 'input' instead of 'messages'
+        // and 'max_output_tokens' instead of 'max_completion_tokens'
         $body = array(
-            'model'                 => $model,
-            'input'                 => $messages,
-            'max_completion_tokens' => $safe_max_tokens,
+            'model'             => $model,
+            'input'             => $messages,
+            'max_output_tokens' => $safe_max_tokens,
         );
 
         // For GPT-5 models with reasoning capability, set minimal reasoning for speed
@@ -277,9 +278,9 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
 
         // Build request body for Responses API
         $body = array(
-            'model'                 => $model,
-            'input'                 => $messages,
-            'max_completion_tokens' => $safe_max_tokens,
+            'model'             => $model,
+            'input'             => $messages,
+            'max_output_tokens' => $safe_max_tokens,
         );
 
         // For GPT-5 models, set minimal reasoning for speed
@@ -400,17 +401,17 @@ class WP_AI_Schema_OpenAI_Provider extends WP_AI_Schema_Abstract_Provider {
         }
 
         // Make a minimal request to test the connection
-        // Note: gpt-5-nano is a reasoning model - it needs enough tokens for both
-        // internal reasoning AND output. 500 tokens allows ~64 reasoning + output.
+        // Note: For Responses API, max_output_tokens limits only visible output
+        // (reasoning tokens are not counted toward this limit)
         $body = array(
-            'model'                 => $settings['openai_model'] ?? self::DEFAULT_MODEL,
-            'input'                 => array(
+            'model'             => $settings['openai_model'] ?? self::DEFAULT_MODEL,
+            'input'             => array(
                 array(
                     'role'    => 'user',
                     'content' => 'Say "OK" and nothing else.',
                 ),
             ),
-            'max_completion_tokens' => 500,
+            'max_output_tokens' => 500,
         );
 
         $response = $this->make_request(
